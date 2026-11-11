@@ -106,19 +106,19 @@ export const PARAMS = [
   { id: 'resWidth',    sec: 'res', label: '左右の開き', type: 'lin', min: 0, max: 1, def: 0.8, unit: '%' },
 
   // 反復
-  { id: 'arpMode',     sec: 'arp', label: '型', type: 'sel', def: 'step',
-    opts: opts({ step: '階段', gliss: '滑走', loops: '輪' }) },
-  { id: 'arpRate',     sec: 'arp', label: '速さ', type: 'log', min: 0.05, max: 8, def: 0.8, unit: '/s' },
-  { id: 'arpDir',      sec: 'arp', label: '進み方', type: 'sel', def: 'up',
-    opts: opts({ up: '上昇', down: '下降', pend: '往復', walk: '酔歩', rand: '乱択' }) },
-  { id: 'arpStride',   sec: 'arp', label: '歩幅',       type: 'lin', min: 1, max: 4, step: 1, def: 1, unit: 'n' },
-  { id: 'arpGate',     sec: 'arp', label: '音の長さ',   type: 'log', min: 0.2, max: 6, def: 1.5, unit: 'x' },
-  { id: 'arpSoft',     sec: 'arp', label: '柔らかさ',   type: 'lin', min: 0, max: 1, def: 0.6, unit: '%' },
-  { id: 'arpRest',     sec: 'arp', label: '休符の率',   type: 'lin', min: 0, max: 0.9, def: 0, unit: '%' },
-  { id: 'arpJitter',   sec: 'arp', label: '間の揺れ',   type: 'lin', min: 0, max: 1, def: 0.1, unit: '%' },
-  { id: 'arpCenter',   sec: 'arp', label: '中心の高さ', type: 'log', min: 55, max: 3520, def: 440, unit: 'Hz' },
-  { id: 'arpWidth',    sec: 'arp', label: '積層の幅',   type: 'log', min: 0.25, max: 3, def: 1.2, unit: 'oct' },
-  { id: 'arpPan',      sec: 'arp', label: '左右の散り', type: 'lin', min: 0, max: 1, def: 0.6, unit: '%' },
+  { id: 'arpMode',     sec: 'arp', label: 'モード', type: 'sel', def: 'step',
+    opts: opts({ step: 'アルペジオ', gliss: 'グリッサンド', loops: 'ループ' }) },
+  { id: 'arpRate',     sec: 'arp', label: 'レート', type: 'log', min: 0.05, max: 8, def: 0.8, unit: '/s' },
+  { id: 'arpDir',      sec: 'arp', label: 'パターン', type: 'sel', def: 'up',
+    opts: opts({ up: 'アップ', down: 'ダウン', pend: 'アップダウン', walk: 'ウォーク', rand: 'ランダム' }) },
+  { id: 'arpStride',   sec: 'arp', label: 'ステップ幅', type: 'lin', min: 1, max: 4, step: 1, def: 1, unit: 'n' },
+  { id: 'arpGate',     sec: 'arp', label: 'ゲート',     type: 'log', min: 0.2, max: 6, def: 1.5, unit: 'x' },
+  { id: 'arpSoft',     sec: 'arp', label: 'アタック',   type: 'lin', min: 0, max: 1, def: 0.6, unit: '%' },
+  { id: 'arpRest',     sec: 'arp', label: '休符',       type: 'lin', min: 0, max: 0.9, def: 0, unit: '%' },
+  { id: 'arpJitter',   sec: 'arp', label: 'ヒューマナイズ', type: 'lin', min: 0, max: 1, def: 0.1, unit: '%' },
+  { id: 'arpCenter',   sec: 'arp', label: 'ピッチ',     type: 'log', min: 55, max: 3520, def: 440, unit: 'Hz' },
+  { id: 'arpWidth',    sec: 'arp', label: 'オクターブ重ね', type: 'log', min: 0.25, max: 3, def: 1.2, unit: 'oct' },
+  { id: 'arpPan',      sec: 'arp', label: 'パン幅',     type: 'lin', min: 0, max: 1, def: 0.6, unit: '%' },
   { id: 'arpRes',      sec: 'arp', label: '共鳴へ送る', type: 'lin', min: 0, max: 1, def: 0.3, unit: '%' },
 
   // 声
@@ -146,7 +146,7 @@ for (const n of [1, 2]) {
   PARAMS.push(
     { id: id('Target'), sec, label: '対象', type: 'sel', def: 'none', opts: LFO_TARGETS },
     { id: id('Shape'),  sec, label: '波形', type: 'sel', def: 'sine',
-      opts: opts({ sine: '正弦', tri: '三角', smooth: '乱数・滑', step: '乱数・段' }) },
+      opts: opts({ sine: 'サイン', tri: '三角波', smooth: 'ランダム', step: 'S&H' }) },
     { id: id('Rate'),   sec, label: '速さ', type: 'log', min: 0.005, max: 8, def: 0.05, unit: 'Hz' },
     { id: id('Depth'),  sec, label: '深さ', type: 'lin', min: 0, max: 1, def: 0.3, unit: '%' },
   );
