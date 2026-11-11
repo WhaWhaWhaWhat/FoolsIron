@@ -8,55 +8,31 @@
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
-<main>
+<div id="unit">
   <header>
     <h1>FoolsIron</h1>
-    <p class="sub">持続音・雑音・声。鳴らして、置いておく</p>
+    <select id="preset" aria-label="プリセット"></select>
+    <span id="dirty" title="変更あり"></span>
+    <button id="play">鳴らす</button>
   </header>
-
-  <button id="play">鳴らす</button>
-  <p id="status">停止中</p>
-
-  <section class="card">
-    <div class="row"><label for="preset">プリセット</label>
-      <select id="preset"></select><span id="dirty" class="note"></span></div>
-    <div class="btns">
-      <button id="save">保存</button>
-      <button id="del">削除</button>
-      <button id="share">書き出し</button>
-      <button id="load">読み込み</button>
-    </div>
-    <div class="row"><label for="morph">移ろい</label>
-      <select id="morph">
-        <option value="0">即時</option>
-        <option value="5">5秒かけて</option>
-        <option value="15">15秒かけて</option>
-        <option value="30">30秒かけて</option>
-        <option value="60">60秒かけて</option>
-      </select></div>
-    <div class="row"><label>種</label>
-      <span id="seed" class="val"></span><button id="reseed" class="small">振り直す</button></div>
-  </section>
-
-  <section class="card">
-    <div class="row"><label for="vol">音量</label>
-      <input id="vol" type="range" min="0" max="100" step="1"><output id="volOut"></output></div>
-    <div class="row"><label for="timer">タイマー</label>
-      <select id="timer">
-        <option value="0">なし</option>
-        <option value="15">15分</option>
-        <option value="30">30分</option>
-        <option value="45">45分</option>
-        <option value="60">60分</option>
-        <option value="90">90分</option>
-        <option value="120">120分</option>
-      </select></div>
-  </section>
-
-  <div id="panels"></div>
-
-  <footer><a href="test.html">消灯再生試験</a></footer>
-</main>
+  <nav id="tabs"></nav>
+  <div id="faces"></div>
+  <footer>
+    <label for="vol">音量</label>
+    <input id="vol" type="range" min="0" max="100" step="1">
+    <label for="timer">タイマー</label>
+    <select id="timer">
+      <option value="0">なし</option>
+      <option value="15">15分</option>
+      <option value="30">30分</option>
+      <option value="45">45分</option>
+      <option value="60">60分</option>
+      <option value="90">90分</option>
+      <option value="120">120分</option>
+    </select>
+    <span id="status">停止中</span>
+  </footer>
+</div>
 
 <dialog id="dlg">
   <h2 id="dlgTitle"></h2>

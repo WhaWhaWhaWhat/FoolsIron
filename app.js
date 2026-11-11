@@ -1,5 +1,5 @@
 // FoolsIron 操作面：画面の組み立て、プリセット、タイマー、発音部との受け渡し
-import { PARAMS, SECTIONS, FACTORY, BY_ID, norm, denorm, defaults, sanitize, format } from './params.js';
+import { PARAMS, MACROS, FACTORY, BY_ID, norm, denorm, defaults, sanitize, format } from './params.js';
 
 const $ = id => document.getElementById(id);
 const KEY = { state: 'foolsiron.state', presets: 'foolsiron.presets', settings: 'foolsiron.settings' };
@@ -8,7 +8,8 @@ const store = {
   set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} },
 };
 
-const settings = Object.assign({ vol: 70, morph: 15, timer: 0 }, store.get(KEY.settings, {}));
+const settings = Object.assign({ vol: 70, morph: 15, timer: 0, tab: 'front' }, store.get(KEY.settings, {}));
+function saveSettings() { store.set(KEY.settings, settings); }
 let user = store.get(KEY.presets, []).filter(p => p && typeof p.name === 'string');
 // 現在の状態。src は選択中のプリセット（'f:番号' 内蔵 / 'u:番号' 自作 / 'x' どちらでもない）
 let state = { name: '', seed: 1, params: defaults(), src: 'x', dirty: false };
@@ -129,62 +130,200 @@ document.addEventListener('visibilitychange', () => {
   if (!document.hidden && ctx && !stopping) { if (ctx.state !== 'running') ctx.resume(); tick(); }
 });
 
-/* ---------- 画面の組み立て ---------- */
-const ctl = {};
-
-function buildPanels() {
-  const root = $('panels');
-  for (const sec of SECTIONS) {
-    const box = document.createElement('details');
-    box.open = !!sec.open;
-    const sum = document.createElement('summary');
-    sum.textContent = sec.label;
-    box.appendChild(sum);
-    for (const p of PARAMS.filter(x => x.sec === sec.id)) {
-      const row = document.createElement('div');
-      row.className = 'row';
-      const lab = document.createElement('label');
-      lab.textContent = p.label; lab.htmlFor = 'p_' + p.id;
-      row.appendChild(lab);
-      let input;
-      if (p.type === 'sel') {
-        input = document.createElement('select');
-        for (const o of p.opts) input.add(new Option(o.label, o.k));
-        input.onchange = () => setParam(p.id, input.value);
-        row.appendChild(input);
-      } else {
-        input = document.createElement('input');
-        input.type = 'range';
-        if (p.step) { input.min = p.min; input.max = p.max; input.step = p.step; }
-        else { input.min = 0; input.max = 1000; input.step = 1; }
-        const out = document.createElement('output');
-        input.oninput = () => setParam(p.id, p.step ? +input.value : denorm(p, input.value / 1000));
-        row.appendChild(input); row.appendChild(out);
-        ctl[p.id + ':out'] = out;
-      }
-      input.id = 'p_' + p.id;
-      ctl[p.id] = input;
-      box.appendChild(row);
-    }
-    root.appendChild(box);
-  }
-}
-
-function showParam(id) {
-  const p = BY_ID[id], v = state.params[id], input = ctl[id];
-  if (p.type === 'sel') input.value = v;
-  else {
-    input.value = p.step ? v : Math.round(norm(p, v) * 1000);
-    ctl[id + ':out'].textContent = format(p, v);
-  }
-}
-
+/* ---------- 部品：つまみ・選択・XY パッド ---------- */
+const shown = {};                       // 項目 → その値を映す描画関数の列（同じ項目を複数の場所に置ける）
+function bind(id, fn) { (shown[id] || (shown[id] = [])).push(fn); }
+function showParam(id) { const v = state.params[id]; for (const f of shown[id] || []) f(v); }
 function setParam(id, v) {
   state.params[id] = v;
-  if (BY_ID[id].type !== 'sel') ctl[id + ':out'].textContent = format(BY_ID[id], v);
+  showParam(id);
   post({ values: { [id]: v }, glide: 0.06 });
   touch();
 }
+
+const SVGNS = 'http://www.w3.org/2000/svg';
+const ARC = 2 * Math.PI * 15, SWEEP = ARC * 0.75;
+function el(tag, cls, text) { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
+function svg(tag, attrs) { const e = document.createElementNS(SVGNS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); return e; }
+
+// 縦に引いて回す。二度叩きで既定値へ戻る。車輪・矢印キーにも応じる
+function makeKnob(p, label, big) {
+  const k = el('div', 'knob' + (big ? ' big' : ''));
+  k.tabIndex = 0;
+  k.setAttribute('role', 'slider'); k.setAttribute('aria-label', label);
+  const g = svg('svg', { viewBox: '0 0 40 40' });
+  g.appendChild(svg('circle', { class: 'trk', cx: 20, cy: 20, r: 15, 'stroke-dasharray': SWEEP + ' ' + ARC, transform: 'rotate(135 20 20)' }));
+  const arc = svg('circle', { class: 'arc', cx: 20, cy: 20, r: 15, transform: 'rotate(135 20 20)' });
+  g.appendChild(arc);
+  g.appendChild(svg('circle', { class: 'cap', cx: 20, cy: 20, r: 10.5 }));
+  const ptr = svg('line', { class: 'ptr', x1: 20, y1: 11, x2: 20, y2: 15.5 });
+  g.appendChild(ptr);
+  const kv = el('div', 'kv');
+  k.appendChild(g); k.appendChild(el('div', 'kl', label)); k.appendChild(kv);
+  const bi = p.min < 0 && p.max > 0;
+
+  const draw = v => {
+    const t = norm(p, v);
+    if (bi) {
+      const z = norm(p, 0), a = Math.min(t, z), len = Math.abs(t - z);
+      arc.setAttribute('stroke-dasharray', Math.max(0.01, len * SWEEP) + ' ' + ARC);
+      arc.setAttribute('stroke-dashoffset', -a * SWEEP);
+    } else {
+      arc.setAttribute('stroke-dasharray', Math.max(0.01, t * SWEEP) + ' ' + ARC);
+    }
+    ptr.setAttribute('transform', 'rotate(' + (270 * t - 135) + ' 20 20)');
+    kv.textContent = format(p, v);
+    k.setAttribute('aria-valuetext', kv.textContent);
+  };
+  bind(p.id, draw);
+
+  const put = t => {
+    t = Math.min(1, Math.max(0, t));
+    let v = denorm(p, t);
+    if (p.step) v = Math.round(v / p.step) * p.step;
+    if (bi && Math.abs(v) < (p.max - p.min) * 0.012) v = 0;       // 中央に軽く吸い付く
+    if (v !== state.params[p.id]) setParam(p.id, v);
+  };
+  let y0 = 0, t0 = 0, lastDown = 0, drag = false;
+  k.addEventListener('pointerdown', e => {
+    const now = performance.now();
+    if (now - lastDown < 320) { setParam(p.id, p.def); lastDown = 0; return; }
+    lastDown = now;
+    drag = true; y0 = e.clientY; t0 = norm(p, state.params[p.id]);
+    k.setPointerCapture(e.pointerId);
+    e.preventDefault(); k.focus({ preventScroll: true });
+  });
+  k.addEventListener('pointermove', e => { if (drag) put(t0 + (y0 - e.clientY) / (e.shiftKey ? 640 : 170)); });
+  const end = () => { drag = false; };
+  k.addEventListener('pointerup', end); k.addEventListener('pointercancel', end);
+  k.addEventListener('wheel', e => {
+    e.preventDefault();
+    const d = p.step ? p.step / (p.max - p.min) : 0.02;
+    put(norm(p, state.params[p.id]) + (e.deltaY < 0 ? d : -d));
+  }, { passive: false });
+  k.addEventListener('keydown', e => {
+    const d = p.step ? p.step / (p.max - p.min) : (e.shiftKey ? 0.002 : 0.01);
+    if (e.key === 'ArrowUp' || e.key === 'ArrowRight') put(norm(p, state.params[p.id]) + d);
+    else if (e.key === 'ArrowDown' || e.key === 'ArrowLeft') put(norm(p, state.params[p.id]) - d);
+    else if (e.key === 'Home' || e.key === 'Delete') setParam(p.id, p.def);
+    else return;
+    e.preventDefault();
+  });
+  return k;
+}
+
+function makeSelect(p, label) {
+  const c = el('div', 'cell');
+  const s = document.createElement('select');
+  s.setAttribute('aria-label', label);
+  for (const o of p.opts) s.add(new Option(o.label, o.k));
+  s.onchange = () => setParam(p.id, s.value);
+  bind(p.id, v => { s.value = v; });
+  c.appendChild(s); c.appendChild(el('div', 'kl', label));
+  return c;
+}
+
+// 横＝明暗、縦＝動静。二度叩きで中央へ
+function makePad(mx, my) {
+  const px = BY_ID[mx.id], py = BY_ID[my.id];
+  const pad = el('div', 'pad'), dot = el('div', 'dot'), val = el('span', 'v');
+  pad.appendChild(el('span', 'l', mx.lo)); pad.appendChild(el('span', 'r', mx.hi));
+  pad.appendChild(el('span', 't', my.hi)); pad.appendChild(el('span', 'b', my.lo));
+  pad.appendChild(val); pad.appendChild(dot);
+  const draw = () => {
+    const x = state.params[mx.id], y = state.params[my.id];
+    dot.style.left = (x + 1) * 50 + '%'; dot.style.top = (1 - y) * 50 + '%';
+    val.textContent = mx.label + ' ' + format(px, x) + '　' + my.label + ' ' + format(py, y);
+  };
+  bind(mx.id, draw); bind(my.id, draw);
+  const snap = v => Math.abs(v) < 0.04 ? 0 : Math.round(v * 100) / 100;
+  const at = e => {
+    const r = pad.getBoundingClientRect();
+    const x = snap(Math.min(1, Math.max(-1, (e.clientX - r.left) / r.width * 2 - 1)));
+    const y = snap(Math.min(1, Math.max(-1, 1 - (e.clientY - r.top) / r.height * 2)));
+    state.params[mx.id] = x; state.params[my.id] = y;
+    draw();
+    post({ values: { [mx.id]: x, [my.id]: y }, glide: 0.1 });
+    touch();
+  };
+  let drag = false, lastDown = 0;
+  pad.addEventListener('pointerdown', e => {
+    const now = performance.now();
+    if (now - lastDown < 320) { lastDown = 0; drag = false; setParam(mx.id, 0); setParam(my.id, 0); return; }
+    lastDown = now; drag = true; pad.setPointerCapture(e.pointerId); e.preventDefault(); at(e);
+  });
+  pad.addEventListener('pointermove', e => { if (drag) at(e); });
+  const end = () => { drag = false; };
+  pad.addEventListener('pointerup', end); pad.addEventListener('pointercancel', end);
+  return pad;
+}
+
+/* ---------- 画面の組み立て：表・各部・庫 ---------- */
+const LEVELS = ['droneLevel', 'noiseLevel', 'resLevel', 'arpLevel', 'voiceLevel'];
+const secIds = sec => PARAMS.filter(p => p.sec === sec).map(p => p.id);
+const TABS = [
+  { id: 'front', label: '表' },
+  { id: 'drone', label: '持続', ids: ['droneLevel', ...secIds('drone')] },
+  { id: 'noise', label: '雑音', ids: ['noiseLevel', ...secIds('noise')] },
+  { id: 'res',   label: '共鳴', ids: ['resLevel', ...secIds('res')] },
+  { id: 'arp',   label: '反復', ids: ['arpLevel', ...secIds('arp')] },
+  { id: 'voice', label: '声',   ids: ['voiceLevel', ...secIds('voice')] },
+  { id: 'field', label: '場',   ids: [...secIds('main').filter(i => !LEVELS.includes(i)), ...secIds('tune')] },
+  { id: 'lfo',   label: 'LFO',  ids: [...secIds('lfo1'), ...secIds('lfo2')] },
+  { id: 'lib',   label: '庫' },
+];
+
+function showTab(id) {
+  for (const t of TABS) {
+    $('f_' + t.id).classList.toggle('on', t.id === id);
+    $('t_' + t.id).classList.toggle('on', t.id === id);
+  }
+  settings.tab = id; saveSettings();
+}
+
+function buildFaces() {
+  const tabs = $('tabs'), faces = $('faces');
+  for (const t of TABS) {
+    const b = el('button', '', t.label);
+    b.id = 't_' + t.id; b.onclick = () => showTab(t.id);
+    tabs.appendChild(b);
+    const f = el('div', 'face' + (t.ids ? ' grid' : ''));
+    f.id = 'f_' + t.id;
+    faces.appendChild(f);
+    if (!t.ids) continue;
+    for (const id of t.ids) {
+      const p = BY_ID[id];
+      let label = LEVELS.includes(id) ? '音量' : p.label;
+      if (p.sec === 'lfo1' || p.sec === 'lfo2') label = p.sec.slice(3) + ' ' + label;
+      if (p.type === 'sel') f.appendChild(makeSelect(p, label));
+      else { const c = el('div', 'cell'); c.appendChild(makeKnob(p, label)); f.appendChild(c); }
+    }
+  }
+  // 表：XY パッド、大つまみ四つ、各部の音量
+  const front = $('f_front'), M = Object.fromEntries(MACROS.map(m => [m.id, m]));
+  front.appendChild(makePad(M.mxLight, M.mxMotion));
+  const mac = el('div', 'macros');
+  for (const id of ['mxDist', 'mxWeight', 'mxDense', 'mxPresence']) mac.appendChild(makeKnob(BY_ID[id], M[id].label, true));
+  front.appendChild(mac);
+  const lev = el('div', 'levels');
+  for (const id of LEVELS) lev.appendChild(makeKnob(BY_ID[id], BY_ID[id].label));
+  front.appendChild(lev);
+  // 庫：プリセットの出し入れと、切替の作法
+  const lib = $('f_lib');
+  lib.innerHTML = `
+    <button id="save">保存</button><button id="del">削除</button>
+    <button id="share">書き出し</button><button id="load">読み込み</button>
+    <div class="wide"><label for="morph">移ろい</label><select id="morph">
+      <option value="0">即時</option><option value="5">5秒かけて</option><option value="15">15秒かけて</option>
+      <option value="30">30秒かけて</option><option value="60">60秒かけて</option></select></div>
+    <div class="wide"><label>種</label><span id="seed" class="val"></span><button id="reseed">振り直す</button></div>
+    <div class="wide"><label>マクロ</label><span class="val note">表のパッドと大つまみ</span><button id="zero">中央へ戻す</button></div>
+    <p class="note wide">つまみは縦に引いて回す。二度叩くと既定値へ戻る。自作のプリセットはこの端末に保存される。別の端末へは「書き出し」で渡す。</p>
+    <div class="wide"><a href="test.html">消灯再生試験</a></div>`;
+}
+
+buildFaces();
+showTab(TABS.some(t => t.id === settings.tab) ? settings.tab : 'front');
 
 /* ---------- 状態とプリセット ---------- */
 let saveTimer = 0;
@@ -210,7 +349,7 @@ function showHead() {
     sel.appendChild(g2);
   }
   sel.value = state.src;
-  $('dirty').textContent = state.dirty && state.src !== 'x' ? '変更あり' : '';
+  $('dirty').classList.toggle('on', state.dirty && state.src !== 'x');
   $('del').disabled = !state.src.startsWith('u:');
   $('seed').textContent = state.seed;
 }
@@ -260,6 +399,13 @@ $('del').onclick = () => {
   showHead(); persist();
 };
 
+$('zero').onclick = () => {
+  const values = {};
+  for (const m of MACROS) { state.params[m.id] = 0; values[m.id] = 0; showParam(m.id); }
+  post({ values, glide: 1.5 });
+  touch();
+};
+
 $('reseed').onclick = () => {
   state.seed = 1 + Math.floor(Math.random() * 99999);
   post({ type: 'seed', seed: state.seed });
@@ -301,10 +447,9 @@ $('dlgOk').onclick = async () => {
 $('dlgClose').onclick = () => dlg.close();
 
 /* ---------- 音量・タイマー・移ろい ---------- */
-function saveSettings() { store.set(KEY.settings, settings); }
-$('vol').value = settings.vol; $('volOut').textContent = settings.vol;
+$('vol').value = settings.vol;
 $('vol').oninput = () => {
-  settings.vol = +$('vol').value; $('volOut').textContent = settings.vol;
+  settings.vol = +$('vol').value;
   if (vol) vol.gain.setTargetAtTime(volGain(), ctx.currentTime, 0.05);
   saveSettings();
 };
@@ -315,7 +460,6 @@ $('morph').onchange = () => { settings.morph = +$('morph').value; saveSettings()
 $('play').onclick = () => { if (ctx) stop(); else start(); };
 
 /* ---------- 起動 ---------- */
-buildPanels();
 (function boot() {
   if (location.hash.startsWith('#p=')) {
     try {

@@ -1,6 +1,6 @@
 // FoolsIron 発音部（AudioWorklet）
 // 持続音・雑音・共鳴器群・反復・声・残響を一つの処理器の中で鳴らす。
-import { PARAMS, scaleRatios, norm, denorm } from './params.js';
+import { PARAMS, MACROS, scaleRatios, norm, denorm } from './params.js';
 
 const SR = sampleRate;
 const LN1000 = 6.907755;
@@ -658,6 +658,8 @@ class FoolsIron extends AudioWorkletProcessor {
       if (p.type === 'sel') this.S[p.id] = p.def;
       else { const i = this.ci[p.id]; this.cur[i] = this.tgt[i] = norm(p, p.def); this.P[p.id] = p.def; }
     }
+    // マクロ：[つまみの番号, [対象の番号, 偏り]...]
+    this.macros = MACROS.map(m => [this.ci[m.id], Object.entries(m.map).map(([k, w]) => [this.ci[k], w])]);
     this.lfo = [{ ph: 0, v: 0, hold: 0 }, { ph: 0, v: 0, hold: 0 }];
     this.g = { drone: 0, noise: 0, res: 0, arp: 0, voice: 0, wet: 0 };
     this.lf0 = Math.log2(110);
@@ -727,6 +729,11 @@ class FoolsIron extends AudioWorkletProcessor {
       else { if (wrapped) L.hold = this.rng() * 2 - 1; v = L.hold; }
       if (ti !== undefined && ti !== this.ci[pre + 'Rate'] && ti !== this.ci[pre + 'Depth']) off[ti] += v * depth * 0.5;
     }
+    for (const [mi, binds] of this.macros) {       // マクロは LFO の後に効かせる（マクロ自体を LFO で揺らせる）
+      const m = clamp(cur[mi] + off[mi], 0, 1) * 2 - 1;
+      if (m > -1e-4 && m < 1e-4) continue;
+      for (const [ti, w] of binds) off[ti] += m * w;
+    }
     for (let i = 0; i < cur.length; i++) {
       P[cont[i].id] = denorm(cont[i], clamp(cur[i] + off[i], 0, 1));
     }
@@ -778,7 +785,7 @@ class FoolsIron extends AudioWorkletProcessor {
       const cnt = +S.voiceCount;
       for (const sp of this.speakers) sp.render(P, f0, ratios, this.lang, n, tL, tR, eT, cnt);
       const far = P.voiceFar, dry = 1 - 0.7 * far;
-      mixTo(n, tL, tR, g.voice * dry, t * dry, dL, dR, (0.4 + 1.6 * far) / dry, wL, wR);
+      mixTo(n, tL, tR, g.voice * dry, t * dry, dL, dR, (0.4 + 1.0 * far) / dry, wL, wR);
     }
     g.voice = t;
 
