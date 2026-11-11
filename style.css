@@ -8,10 +8,11 @@ body { margin:0; background:var(--bg); color:var(--fg); font-family:system-ui, "
 @media (min-height:700px) and (min-width:700px) { body { align-items:center; } }
 
 /* 筐体。一辺を 100cqw とし、中の寸法はすべてその比で決める */
+/* cqw は「自分より外の」容器を基準にする。ゆえに寸法を持つ外箱と、中身を並べる内箱を分ける */
 #unit { width:min(100vw, 100dvh, 640px); aspect-ratio:1; container-type:size; position:relative;
-        background:linear-gradient(160deg,#1b1a18,#11100f 60%); border:1px solid var(--line);
-        display:grid; grid-template-rows:9.5cqw 7cqw 1fr 8.5cqw; font-size:3.1cqw; line-height:1.25;
-        user-select:none; -webkit-user-select:none; overflow:hidden; }
+        background:linear-gradient(160deg,#1b1a18,#11100f 60%); border:1px solid var(--line); overflow:hidden; }
+#in { width:100%; height:100%; display:grid; grid-template-rows:9.5cqw 7cqw 1fr 8.5cqw; font-size:3.1cqw; line-height:1.25;
+        user-select:none; -webkit-user-select:none; }
 button, select { font:inherit; color:var(--fg); background:#1d1c1a; border:1px solid var(--line); border-radius:1cqw;
         padding:0 1.6cqw; height:6.4cqw; min-width:0; }
 button:disabled { opacity:.35; }
