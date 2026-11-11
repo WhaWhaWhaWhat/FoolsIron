@@ -303,14 +303,14 @@ const PARTS = [['droneLevel', 'dronePitch'], ['noiseLevel', 'noisePitch'], ['res
 const secIds = sec => PARAMS.filter(p => p.sec === sec).map(p => p.id);
 const TABS = [
   { id: 'front', label: '表' },
-  { id: 'drone', label: '持続', ids: ['droneLevel', ...secIds('drone')] },
-  { id: 'noise', label: '雑音', ids: ['noiseLevel', ...secIds('noise')] },
-  { id: 'res',   label: '共鳴', ids: ['resLevel', ...secIds('res')] },
-  { id: 'arp',   label: '反復', ids: ['arpLevel', ...secIds('arp')] },
+  { id: 'drone', label: 'ドローン', ids: ['droneLevel', ...secIds('drone')] },
+  { id: 'noise', label: 'ノイズ', ids: ['noiseLevel', ...secIds('noise')] },
+  { id: 'res',   label: 'RES', ids: ['resLevel', ...secIds('res')] },
+  { id: 'arp',   label: 'ARP', ids: ['arpLevel', ...secIds('arp')] },
   { id: 'voice', label: '声',   ids: ['voiceLevel', ...secIds('voice')] },
   { id: 'field', label: '場',   ids: [...secIds('main').filter(i => !LEVELS.includes(i)), ...secIds('tune')] },
   { id: 'lfo',   label: 'LFO',  ids: [...secIds('lfo1'), ...secIds('lfo2')] },
-  { id: 'lib',   label: '庫' },
+  { id: 'lib',   label: 'プリセット' },
 ];
 
 function showTab(id) {
@@ -360,9 +360,9 @@ function buildFaces() {
   lib.innerHTML = `
     <button id="save">保存</button><button id="del">削除</button>
     <button id="share">書き出し</button><button id="load">読み込み</button>
-    <div class="wide"><label>種</label><span id="seed" class="val"></span><button id="reseed">振り直す</button></div>
+    <div class="wide"><label>シード</label><span id="seed" class="val"></span><button id="reseed">振り直す</button></div>
     <div class="wide"><label>マクロ</label><span class="val note">表のパッドと大つまみ</span><button id="zero">中央へ戻す</button></div>
-    <p class="note wide">表の下段は、縦の棒が各部の音量、つまみが高低。つまみは縦に引いて回す。二度叩くと既定値へ戻る。上辺の秒数は「移ろい」、プリセットを切り替える際にかける時間である。自作のプリセットはこの端末に保存される。別の端末へは「書き出し」で渡す。</p>
+    <p class="note wide">表の下段は、縦の棒が各部の音量、つまみが高低。つまみは縦に引いて回す。二度叩くと既定値へ戻る。上辺の秒数は「モーフ」、プリセットを切り替える際にかける時間である。自作のプリセットはこの端末に保存される。別の端末へは「書き出し」で渡す。</p>
     <div class="wide"><a href="test.html">消灯再生試験</a></div>`;
 }
 

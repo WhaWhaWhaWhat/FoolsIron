@@ -29,10 +29,10 @@ export const SECTIONS = [
   { id: 'macro', label: 'マクロ' },
   { id: 'main',  label: '卓',     open: true },
   { id: 'tune',  label: '調律と場' },
-  { id: 'drone', label: '持続音' },
-  { id: 'noise', label: '雑音' },
-  { id: 'res',   label: '共鳴' },
-  { id: 'arp',   label: '反復' },
+  { id: 'drone', label: 'ドローン' },
+  { id: 'noise', label: 'ノイズ' },
+  { id: 'res',   label: 'RES' },
+  { id: 'arp',   label: 'ARP' },
   { id: 'voice', label: '声' },
   { id: 'lfo1',  label: 'LFO 1' },
   { id: 'lfo2',  label: 'LFO 2' },
@@ -59,51 +59,51 @@ export const PARAMS = [
   ...MACROS.map(m => ({ id: m.id, sec: 'macro', label: m.label, type: 'lin', min: -1, max: 1, def: 0, unit: 'bi' })),
 
   // 卓
-  { id: 'droneLevel', sec: 'main', label: '持続音', type: 'lin', min: 0, max: 1, def: 0.7, unit: '%' },
-  { id: 'noiseLevel', sec: 'main', label: '雑音',   type: 'lin', min: 0, max: 1, def: 0.3, unit: '%' },
-  { id: 'resLevel',   sec: 'main', label: '共鳴',   type: 'lin', min: 0, max: 1, def: 0.5, unit: '%' },
-  { id: 'arpLevel',   sec: 'main', label: '反復',   type: 'lin', min: 0, max: 1, def: 0,   unit: '%' },
+  { id: 'droneLevel', sec: 'main', label: 'ドローン', type: 'lin', min: 0, max: 1, def: 0.7, unit: '%' },
+  { id: 'noiseLevel', sec: 'main', label: 'ノイズ',   type: 'lin', min: 0, max: 1, def: 0.3, unit: '%' },
+  { id: 'resLevel',   sec: 'main', label: 'RES',   type: 'lin', min: 0, max: 1, def: 0.5, unit: '%' },
+  { id: 'arpLevel',   sec: 'main', label: 'ARP',   type: 'lin', min: 0, max: 1, def: 0,   unit: '%' },
   { id: 'voiceLevel', sec: 'main', label: '声',     type: 'lin', min: 0, max: 1, def: 0,   unit: '%' },
-  { id: 'root',       sec: 'main', label: '基音',   type: 'lin', min: 0, max: 24, step: 1, def: 12, unit: 'note' },
+  { id: 'root',       sec: 'main', label: 'ルート',   type: 'lin', min: 0, max: 24, step: 1, def: 12, unit: 'note' },
   { id: 'tone',       sec: 'main', label: '明るさ', type: 'log', min: 200, max: 16000, def: 6000, unit: 'Hz' },
   { id: 'fluc',       sec: 'main', label: '揺らぎ', type: 'lin', min: 0, max: 1, def: 0.6, unit: '%' },
-  { id: 'space',      sec: 'main', label: '空間',   type: 'lin', min: 0, max: 1, def: 0.5, unit: '%' },
-  { id: 'width',      sec: 'main', label: '広がり', type: 'lin', min: 0, max: 1, def: 0.5, unit: '%' },
+  { id: 'space',      sec: 'main', label: 'リバーブ',   type: 'lin', min: 0, max: 1, def: 0.5, unit: '%' },
+  { id: 'width',      sec: 'main', label: 'ステレオ幅', type: 'lin', min: 0, max: 1, def: 0.5, unit: '%' },
   { id: 'sway',       sec: 'main', label: '漂い',   type: 'lin', min: 0, max: 1, def: 0.3, unit: '%' },
 
   // 調律と場
-  { id: 'scale',      sec: 'tune', label: '音階', type: 'sel', def: 'harm',
+  { id: 'scale',      sec: 'tune', label: 'スケール', type: 'sel', def: 'harm',
     opts: Object.entries(SCALES).map(([k, s]) => ({ k, label: s.label })) },
-  { id: 'temper',     sec: 'tune', label: '律',   type: 'sel', def: 'ji', opts: opts({ ji: '純正律', et: '平均律' }) },
-  { id: 'fine',       sec: 'tune', label: '微調', type: 'lin', min: -50, max: 50, def: 0, unit: 'cent' },
+  { id: 'temper',     sec: 'tune', label: 'チューニング',   type: 'sel', def: 'ji', opts: opts({ ji: '純正律', et: '平均律' }) },
+  { id: 'fine',       sec: 'tune', label: 'ファイン', type: 'lin', min: -50, max: 50, def: 0, unit: 'cent' },
   { id: 'flucRate',   sec: 'tune', label: '揺らぎの速さ', type: 'log', min: 0.01, max: 1, def: 0.08, unit: 'Hz' },
-  { id: 'spaceDecay', sec: 'tune', label: '残響の長さ',   type: 'log', min: 0.5, max: 20, def: 6, unit: 's' },
-  { id: 'spaceDamp',  sec: 'tune', label: '残響の暗さ',   type: 'lin', min: 0, max: 1, def: 0.5, unit: '%' },
+  { id: 'spaceDecay', sec: 'tune', label: 'リバーブ長',   type: 'log', min: 0.5, max: 20, def: 6, unit: 's' },
+  { id: 'spaceDamp',  sec: 'tune', label: 'ダンピング',   type: 'lin', min: 0, max: 1, def: 0.5, unit: '%' },
 
   // 持続音
   { id: 'dronePitch',  sec: 'drone', label: '高低', type: 'lin', min: -24, max: 24, step: 1, def: 0, unit: 'st' },
   { id: 'droneBright', sec: 'drone', label: '倍音の明るさ', type: 'lin', min: 0, max: 1, def: 0.45, unit: '%' },
   { id: 'droneParts',  sec: 'drone', label: '倍音の数',     type: 'lin', min: 1, max: 16, def: 12, unit: 'n' },
   { id: 'droneEven',   sec: 'drone', label: '偶数倍音',     type: 'lin', min: 0, max: 1, def: 1, unit: '%' },
-  { id: 'droneBeat',   sec: 'drone', label: 'うなり',       type: 'sq',  min: 0, max: 6, def: 0.4, unit: 'Hz' },
-  { id: 'droneWidth',  sec: 'drone', label: '左右の開き',   type: 'lin', min: 0, max: 1, def: 0.7, unit: '%' },
-  { id: 'subLevel',    sec: 'drone', label: '副発振',       type: 'lin', min: 0, max: 1, def: 0.4, unit: '%' },
-  { id: 'subOct',      sec: 'drone', label: '副発振の高さ', type: 'sel', def: '1',
+  { id: 'droneBeat',   sec: 'drone', label: 'デチューン',       type: 'sq',  min: 0, max: 6, def: 0.4, unit: 'Hz' },
+  { id: 'droneWidth',  sec: 'drone', label: 'ステレオ幅',   type: 'lin', min: 0, max: 1, def: 0.7, unit: '%' },
+  { id: 'subLevel',    sec: 'drone', label: 'サブ',       type: 'lin', min: 0, max: 1, def: 0.4, unit: '%' },
+  { id: 'subOct',      sec: 'drone', label: 'サブ オクターブ', type: 'sel', def: '1',
     opts: opts({ 0: '基音と同じ', 1: '1oct 下', 2: '2oct 下' }) },
-  { id: 'subDetune',   sec: 'drone', label: '副発振のずれ', type: 'lin', min: -60, max: 60, def: 4, unit: 'cent' },
+  { id: 'subDetune',   sec: 'drone', label: 'サブ デチューン', type: 'lin', min: -60, max: 60, def: 4, unit: 'cent' },
 
   // 雑音
   { id: 'noisePitch',  sec: 'noise', label: '高低', type: 'lin', min: -1, max: 1, def: 0, unit: 'bi' },
   { id: 'noiseColor',  sec: 'noise', label: '色', type: 'lin', min: 0, max: 1, def: 0.7, unit: '%' },
   { id: 'noiseSwell',  sec: 'noise', label: '波の深さ',   type: 'lin', min: 0, max: 1, def: 0.4, unit: '%' },
   { id: 'noiseSwellT', sec: 'noise', label: '波の周期',   type: 'log', min: 2, max: 40, def: 9, unit: 's' },
-  { id: 'noiseWidth',  sec: 'noise', label: '左右の開き', type: 'lin', min: 0, max: 1, def: 0.8, unit: '%' },
-  { id: 'noiseRes',    sec: 'noise', label: '共鳴へ送る', type: 'lin', min: 0, max: 1, def: 0.5, unit: '%' },
+  { id: 'noiseWidth',  sec: 'noise', label: 'ステレオ幅', type: 'lin', min: 0, max: 1, def: 0.8, unit: '%' },
+  { id: 'noiseRes',    sec: 'noise', label: 'RES 送り', type: 'lin', min: 0, max: 1, def: 0.5, unit: '%' },
 
   // 共鳴
-  { id: 'resDecay',    sec: 'res', label: '余韻', type: 'log', min: 0.2, max: 12, def: 2.5, unit: 's' },
+  { id: 'resDecay',    sec: 'res', label: 'ディケイ', type: 'log', min: 0.2, max: 12, def: 2.5, unit: 's' },
   { id: 'resPitch',    sec: 'res', label: '高低', type: 'lin', min: -24, max: 24, step: 1, def: 0, unit: 'st' },
-  { id: 'resWidth',    sec: 'res', label: '左右の開き', type: 'lin', min: 0, max: 1, def: 0.8, unit: '%' },
+  { id: 'resWidth',    sec: 'res', label: 'ステレオ幅', type: 'lin', min: 0, max: 1, def: 0.8, unit: '%' },
 
   // 反復
   { id: 'arpMode',     sec: 'arp', label: 'モード', type: 'sel', def: 'step',
@@ -119,7 +119,7 @@ export const PARAMS = [
   { id: 'arpCenter',   sec: 'arp', label: 'ピッチ',     type: 'log', min: 55, max: 3520, def: 440, unit: 'Hz' },
   { id: 'arpWidth',    sec: 'arp', label: 'オクターブ重ね', type: 'log', min: 0.25, max: 3, def: 1.2, unit: 'oct' },
   { id: 'arpPan',      sec: 'arp', label: 'パン幅',     type: 'lin', min: 0, max: 1, def: 0.6, unit: '%' },
-  { id: 'arpRes',      sec: 'arp', label: '共鳴へ送る', type: 'lin', min: 0, max: 1, def: 0.3, unit: '%' },
+  { id: 'arpRes',      sec: 'arp', label: 'RES 送り', type: 'lin', min: 0, max: 1, def: 0.3, unit: '%' },
 
   // 声
   { id: 'voiceCount',  sec: 'voice', label: '人数', type: 'sel', def: '1', opts: opts({ 1: '一人', 2: '二人', 3: '三人' }) },
@@ -128,11 +128,11 @@ export const PARAMS = [
   { id: 'voiceGap',    sec: 'voice', label: '間',       type: 'lin', min: 0, max: 1, def: 0.45, unit: '%' },
   { id: 'voiceBreath', sec: 'voice', label: '囁き',     type: 'lin', min: 0, max: 1, def: 0.25, unit: '%' },
   { id: 'voiceCons',   sec: 'voice', label: '子音',     type: 'lin', min: 0, max: 1, def: 0.5, unit: '%' },
-  { id: 'voiceTract',  sec: 'voice', label: '声質', type: 'lin', min: 0.75, max: 1.35, def: 1, unit: 'x' },
+  { id: 'voiceTract',  sec: 'voice', label: 'フォルマント', type: 'lin', min: 0.75, max: 1.35, def: 1, unit: 'x' },
   { id: 'voiceTune',   sec: 'voice', label: '詠唱', type: 'lin', min: 0, max: 1, def: 0, unit: '%' },
   { id: 'voiceFar',    sec: 'voice', label: '遠さ',     type: 'lin', min: 0, max: 1, def: 0.5, unit: '%' },
-  { id: 'voiceSpread', sec: 'voice', label: '左右の開き', type: 'lin', min: 0, max: 1, def: 0.6, unit: '%' },
-  { id: 'voiceRes',    sec: 'voice', label: '共鳴へ送る', type: 'lin', min: 0, max: 1, def: 0.2, unit: '%' },
+  { id: 'voiceSpread', sec: 'voice', label: 'ステレオ幅', type: 'lin', min: 0, max: 1, def: 0.6, unit: '%' },
+  { id: 'voiceRes',    sec: 'voice', label: 'RES 送り', type: 'lin', min: 0, max: 1, def: 0.2, unit: '%' },
 ];
 
 // LFO は二基。対象は段階を持たぬ連続量すべて
@@ -144,11 +144,11 @@ const LFO_TARGETS = [{ k: 'none', label: 'なし' }].concat(
 for (const n of [1, 2]) {
   const sec = 'lfo' + n, id = s => 'lfo' + n + s;
   PARAMS.push(
-    { id: id('Target'), sec, label: '対象', type: 'sel', def: 'none', opts: LFO_TARGETS },
+    { id: id('Target'), sec, label: 'ターゲット', type: 'sel', def: 'none', opts: LFO_TARGETS },
     { id: id('Shape'),  sec, label: '波形', type: 'sel', def: 'sine',
       opts: opts({ sine: 'サイン', tri: '三角波', smooth: 'ランダム', step: 'S&H' }) },
-    { id: id('Rate'),   sec, label: '速さ', type: 'log', min: 0.005, max: 8, def: 0.05, unit: 'Hz' },
-    { id: id('Depth'),  sec, label: '深さ', type: 'lin', min: 0, max: 1, def: 0.3, unit: '%' },
+    { id: id('Rate'),   sec, label: 'レート', type: 'log', min: 0.005, max: 8, def: 0.05, unit: 'Hz' },
+    { id: id('Depth'),  sec, label: 'デプス', type: 'lin', min: 0, max: 1, def: 0.3, unit: '%' },
   );
 }
 
