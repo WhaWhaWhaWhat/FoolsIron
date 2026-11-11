@@ -1,0 +1,319 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#0b0b0c">
+<title>FoolsIron — 消灯再生試験</title>
+<style>
+  :root { color-scheme: dark; --bg:#0b0b0c; --fg:#cfc8bb; --dim:#7d776c; --line:#2a2826; --acc:#b08d57; }
+  * { box-sizing: border-box; }
+  body { margin:0; padding:24px 16px 48px; background:var(--bg); color:var(--fg);
+         font:16px/1.6 system-ui, "Noto Sans JP", sans-serif; }
+  main { max-width:560px; margin:0 auto; }
+  h1 { margin:0; font-size:28px; letter-spacing:.12em; font-weight:500; }
+  .sub { margin:0 0 24px; color:var(--dim); font-size:13px; }
+  button, select { font:inherit; color:var(--fg); background:#161514; border:1px solid var(--line);
+         border-radius:6px; padding:10px 14px; }
+  #toggle { width:100%; padding:18px; font-size:18px; border-color:var(--acc); }
+  #toggle.on { background:var(--acc); color:#0b0b0c; }
+  .row { display:flex; align-items:center; gap:12px; margin-top:14px; }
+  .row label { flex:0 0 5.5em; color:var(--dim); font-size:14px; }
+  .row select, .row input, .row button { flex:1; min-width:0; }
+  input[type=range] { accent-color:var(--acc); }
+  #status { margin-top:22px; padding:12px; border:1px solid var(--line); border-radius:6px;
+         font-variant-numeric:tabular-nums; font-size:14px; white-space:pre-line; }
+  h2 { margin:26px 0 6px; font-size:14px; color:var(--dim); font-weight:500; }
+  .log { margin:0; padding:10px 12px; border:1px solid var(--line); border-radius:6px; font:12px/1.55 ui-monospace, monospace;
+         white-space:pre-wrap; word-break:break-all; max-height:40vh; overflow:auto; min-height:3em; }
+  details { margin-top:18px; color:var(--dim); font-size:13px; }
+  ol { padding-left:1.4em; font-size:14px; color:var(--dim); }
+  #black { position:fixed; inset:0; background:#000; display:none; z-index:10; }
+  #black.on { display:block; }
+  #black span { position:absolute; bottom:18px; width:100%; text-align:center; color:#1c1c1c; font-size:12px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>FoolsIron</h1>
+  <p class="sub">消灯再生試験 — 画面を消しても鳴り続けるかを確かめる</p>
+
+  <button id="toggle">鳴らす</button>
+
+  <div class="row"><label for="route">出力経路</label>
+    <select id="route">
+      <option value="element">audio要素経由（メディア通知あり）</option>
+      <option value="direct">直接出力（素のWebAudio）</option>
+    </select></div>
+  <div class="row"><label for="vol">音量</label>
+    <input id="vol" type="range" min="0" max="1" step="0.01" value="0.6"></div>
+  <div class="row"><label for="timer">タイマー</label>
+    <select id="timer">
+      <option value="0">なし</option>
+      <option value="1">1分（動作確認用）</option>
+      <option value="15">15分</option>
+      <option value="30">30分</option>
+      <option value="60">60分</option>
+    </select></div>
+  <div class="row"><label>退避策</label>
+    <button id="dim">暗転（画面を点けたまま黒くする）</button></div>
+
+  <div id="status">停止中</div>
+
+  <h2>記録</h2>
+  <pre class="log" id="log"></pre>
+
+  <details id="prevBox" hidden>
+    <summary>前回の記録</summary>
+    <pre class="log" id="prev"></pre>
+  </details>
+
+  <h2>試し方</h2>
+  <ol>
+    <li>「audio要素経由」で鳴らし、電源ボタンで画面を消す。10〜30分置く。</li>
+    <li>耳で途切れを確かめ、画面を点けて「記録」の復帰行を読む。</li>
+    <li>途切れたなら「直接出力」でも試す。両方駄目なら「暗転」で同じ時間置く。</li>
+    <li>タイマーは「1分」で、消灯中にも音が絞られて止まるかを見る。</li>
+  </ol>
+</main>
+
+<audio id="sink"></audio>
+<div id="black"><span>触れると戻る</span></div>
+
+<script>
+'use strict';
+const $ = id => document.getElementById(id);
+const LOGKEY = 'foolsiron.test.log';
+const sink = $('sink');
+
+let ctx = null, vol = null, fade = null;
+let startWall = 0, fadeInEnd = 0, endAt = null, hiddenAt = null;
+let tick = null, ticks = 0, wake = null, wantWake = false, paused = false;
+let lines = [];
+
+/* ---------- 記録 ---------- */
+const clock = () => new Date().toLocaleTimeString('ja-JP', { hour12: false });
+const fmt = s => {
+  s = Math.max(0, Math.round(s));
+  const m = Math.floor(s / 60);
+  return (m ? m + '分' : '') + (s % 60) + '秒';
+};
+function save() {
+  try { localStorage.setItem(LOGKEY, JSON.stringify({ lines, alive: Date.now() })); } catch (e) {}
+}
+function log(msg) {
+  lines.push(clock() + '  ' + msg);
+  if (lines.length > 300) lines.shift();
+  $('log').textContent = lines.join('\n');
+  $('log').scrollTop = 1e9;
+  save();
+}
+try {
+  const prev = JSON.parse(localStorage.getItem(LOGKEY) || 'null');
+  if (prev && prev.lines && prev.lines.length) {
+    $('prev').textContent = prev.lines.join('\n') +
+      '\n(最後の生存確認 ' + new Date(prev.alive).toLocaleTimeString('ja-JP', { hour12: false }) + ')';
+    $('prevBox').hidden = false;
+  }
+} catch (e) {}
+
+/* ---------- 発音部：倍音格子の仮ドローン ---------- */
+function buildDrone(out) {
+  const f0 = 110;
+  const pre = ctx.createGain();
+  pre.gain.value = 0.4;
+  const lp = ctx.createBiquadFilter();
+  lp.type = 'lowpass';
+  lp.frequency.value = 1800;
+  pre.connect(lp);
+  lp.connect(out);
+  for (let n = 1; n <= 8; n++) {
+    const g = ctx.createGain();
+    g.gain.value = 0.5 / n;
+    const pan = ctx.createStereoPanner();
+    pan.pan.value = (n % 2 ? -1 : 1) * Math.min(0.7, 0.12 * n);
+    // 各倍音の明滅。周期は互いに合わせない
+    const lfo = ctx.createOscillator();
+    lfo.frequency.value = 0.013 + Math.random() * 0.06;
+    const depth = ctx.createGain();
+    depth.gain.value = 0.4 / n;
+    lfo.connect(depth);
+    depth.connect(g.gain);
+    lfo.start();
+    // 僅かにずらした二声でうなりを作る
+    for (const d of [-1, 1]) {
+      const o = ctx.createOscillator();
+      o.frequency.value = f0 * n + d * (0.15 + 0.05 * n);
+      o.connect(g);
+      o.start();
+    }
+    g.connect(pan);
+    pan.connect(pre);
+  }
+}
+
+/* ---------- タイマー：音の時計の上に予約する（裏でJSが間引かれても効く） ---------- */
+function armTimer() {
+  if (!ctx) return;
+  const min = +$('timer').value;
+  const t = Math.max(ctx.currentTime, fadeInEnd);
+  if (fade.gain.cancelAndHoldAtTime) fade.gain.cancelAndHoldAtTime(t);
+  else fade.gain.cancelScheduledValues(t);
+  fade.gain.linearRampToValueAtTime(1, t + 1);
+  endAt = null;
+  if (min) {
+    const total = min * 60, f = Math.min(60, total / 2);
+    endAt = t + total;
+    fade.gain.setValueAtTime(1, endAt - f);
+    fade.gain.linearRampToValueAtTime(0, endAt);
+    log('タイマー ' + min + '分（末尾' + fmt(f) + 'で絞る）');
+  } else {
+    log('タイマーなし');
+  }
+}
+
+/* ---------- 開始・停止 ---------- */
+async function start() {
+  lines = [];
+  const route = $('route').value;
+  ctx = new AudioContext({ latencyHint: 'playback' });
+  ctx.onstatechange = () => { if (ctx) log('音響文脈の状態: ' + ctx.state); };
+  vol = ctx.createGain();
+  vol.gain.value = +$('vol').value;
+  fade = ctx.createGain();
+  fade.gain.setValueAtTime(0, ctx.currentTime);
+  fade.gain.linearRampToValueAtTime(1, ctx.currentTime + 4);
+  fadeInEnd = ctx.currentTime + 4;
+  fade.connect(vol);
+  buildDrone(fade);
+
+  if (route === 'element') {
+    const dest = ctx.createMediaStreamDestination();
+    vol.connect(dest);
+    sink.srcObject = dest.stream;
+    await sink.play();
+  } else {
+    vol.connect(ctx.destination);
+  }
+  await ctx.resume();
+
+  if ('mediaSession' in navigator) {
+    try {
+      navigator.mediaSession.metadata = new MediaMetadata({ title: 'FoolsIron', artist: '消灯再生試験' });
+      navigator.mediaSession.setActionHandler('play', resume);
+      navigator.mediaSession.setActionHandler('pause', pause);
+      navigator.mediaSession.setActionHandler('stop', stop);
+      navigator.mediaSession.playbackState = 'playing';
+    } catch (e) {}
+  }
+
+  startWall = Date.now();
+  paused = false;
+  hiddenAt = null;
+  $('toggle').textContent = '止める';
+  $('toggle').classList.add('on');
+  $('route').disabled = true;
+  log('開始（経路: ' + (route === 'element' ? 'audio要素経由' : '直接出力') + '、' + ctx.sampleRate + 'Hz）');
+  armTimer();
+  ticks = 0;
+  tick = setInterval(onTick, 1000);
+  onTick();
+}
+
+function stop() {
+  if (!ctx) return;
+  clearInterval(tick);
+  log('停止（実時間 ' + fmt((Date.now() - startWall) / 1000) + '）');
+  const c = ctx;
+  ctx = null;
+  c.onstatechange = null;
+  c.close();
+  sink.pause();
+  sink.srcObject = null;
+  if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'none';
+  $('toggle').textContent = '鳴らす';
+  $('toggle').classList.remove('on');
+  $('route').disabled = false;
+  $('status').textContent = '停止中';
+}
+
+function pause() {
+  if (!ctx || paused) return;
+  paused = true;
+  ctx.suspend();
+  sink.pause();
+  if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'paused';
+  log('一時停止（通知から）');
+}
+function resume() {
+  if (!ctx || !paused) return;
+  paused = false;
+  ctx.resume();
+  if (sink.srcObject) sink.play();
+  if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'playing';
+  log('再開（通知から）');
+}
+
+function onTick() {
+  if (!ctx) return;
+  const wall = (Date.now() - startWall) / 1000;
+  let s = '実時間　　 ' + fmt(wall) + '\n音の時計　 ' + fmt(ctx.currentTime) +
+          '\n差　　　　 ' + (wall - ctx.currentTime).toFixed(1) + '秒';
+  if (endAt) s += '\nタイマー残 ' + fmt(endAt - ctx.currentTime);
+  $('status').textContent = s;
+  if (++ticks % 10 === 0) save();
+  if (endAt && ctx.currentTime >= endAt) { log('タイマー満了'); stop(); }
+}
+
+/* ---------- 消灯・復帰の観測 ---------- */
+document.addEventListener('visibilitychange', () => {
+  if (!ctx) return;
+  if (document.hidden) {
+    hiddenAt = { w: Date.now(), a: ctx.currentTime };
+    log('画面が隠れた');
+  } else {
+    if (hiddenAt) {
+      const dw = (Date.now() - hiddenAt.w) / 1000, da = ctx.currentTime - hiddenAt.a;
+      const ok = paused || da >= dw * 0.97 - 1;
+      log('復帰: 裏に ' + fmt(dw) + ' / 音の時計は ' + fmt(da) + ' 進んだ → ' +
+          (ok ? '鳴り続けた模様' : '途切れた疑い（' + fmt(dw - da) + ' 欠落）'));
+      hiddenAt = null;
+    }
+    if (wantWake) acquireWake();
+    onTick();
+  }
+});
+sink.addEventListener('pause', () => { if (ctx && !paused) log('audio要素が止められた'); });
+
+/* ---------- 退避策：暗転 ---------- */
+async function acquireWake() {
+  if (!('wakeLock' in navigator)) { log('この環境は画面起動維持に対応していない'); return; }
+  try {
+    wake = await navigator.wakeLock.request('screen');
+    wake.addEventListener('release', () => { if (wantWake) log('画面起動維持が解かれた'); });
+    log('画面起動維持を得た');
+  } catch (e) { log('画面起動維持に失敗: ' + e.message); }
+}
+$('dim').onclick = async () => {
+  wantWake = true;
+  $('black').classList.add('on');
+  try { await document.documentElement.requestFullscreen(); } catch (e) {}
+  acquireWake();
+};
+$('black').onclick = () => {
+  wantWake = false;
+  $('black').classList.remove('on');
+  if (wake) { wake.release(); wake = null; }
+  if (document.fullscreenElement) document.exitFullscreen();
+};
+
+/* ---------- 操作 ---------- */
+$('toggle').onclick = () => {
+  if (ctx) stop();
+  else start().catch(e => { log('開始に失敗: ' + e.message); });
+};
+$('vol').oninput = () => { if (ctx) vol.gain.setTargetAtTime(+$('vol').value, ctx.currentTime, 0.05); };
+$('timer').onchange = armTimer;
+</script>
+</body>
+</html>
