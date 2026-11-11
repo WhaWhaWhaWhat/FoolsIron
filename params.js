@@ -81,6 +81,7 @@ export const PARAMS = [
   { id: 'spaceDamp',  sec: 'tune', label: '残響の暗さ',   type: 'lin', min: 0, max: 1, def: 0.5, unit: '%' },
 
   // 持続音
+  { id: 'dronePitch',  sec: 'drone', label: '高低', type: 'lin', min: -24, max: 24, step: 1, def: 0, unit: 'st' },
   { id: 'droneBright', sec: 'drone', label: '倍音の明るさ', type: 'lin', min: 0, max: 1, def: 0.45, unit: '%' },
   { id: 'droneParts',  sec: 'drone', label: '倍音の数',     type: 'lin', min: 1, max: 16, def: 12, unit: 'n' },
   { id: 'droneEven',   sec: 'drone', label: '偶数倍音',     type: 'lin', min: 0, max: 1, def: 1, unit: '%' },
@@ -92,6 +93,7 @@ export const PARAMS = [
   { id: 'subDetune',   sec: 'drone', label: '副発振のずれ', type: 'lin', min: -60, max: 60, def: 4, unit: 'cent' },
 
   // 雑音
+  { id: 'noisePitch',  sec: 'noise', label: '高低', type: 'lin', min: -1, max: 1, def: 0, unit: 'bi' },
   { id: 'noiseColor',  sec: 'noise', label: '色', type: 'lin', min: 0, max: 1, def: 0.7, unit: '%' },
   { id: 'noiseSwell',  sec: 'noise', label: '波の深さ',   type: 'lin', min: 0, max: 1, def: 0.4, unit: '%' },
   { id: 'noiseSwellT', sec: 'noise', label: '波の周期',   type: 'log', min: 2, max: 40, def: 9, unit: 's' },
@@ -100,7 +102,7 @@ export const PARAMS = [
 
   // 共鳴
   { id: 'resDecay',    sec: 'res', label: '余韻', type: 'log', min: 0.2, max: 12, def: 2.5, unit: 's' },
-  { id: 'resOct',      sec: 'res', label: '高さ', type: 'lin', min: 0, max: 3, step: 1, def: 1, unit: 'oct' },
+  { id: 'resPitch',    sec: 'res', label: '高低', type: 'lin', min: -24, max: 24, step: 1, def: 0, unit: 'st' },
   { id: 'resWidth',    sec: 'res', label: '左右の開き', type: 'lin', min: 0, max: 1, def: 0.8, unit: '%' },
 
   // 反復
@@ -114,14 +116,14 @@ export const PARAMS = [
   { id: 'arpSoft',     sec: 'arp', label: '柔らかさ',   type: 'lin', min: 0, max: 1, def: 0.6, unit: '%' },
   { id: 'arpRest',     sec: 'arp', label: '休符の率',   type: 'lin', min: 0, max: 0.9, def: 0, unit: '%' },
   { id: 'arpJitter',   sec: 'arp', label: '間の揺れ',   type: 'lin', min: 0, max: 1, def: 0.1, unit: '%' },
-  { id: 'arpCenter',   sec: 'arp', label: '中心の高さ', type: 'log', min: 110, max: 1760, def: 440, unit: 'Hz' },
+  { id: 'arpCenter',   sec: 'arp', label: '中心の高さ', type: 'log', min: 55, max: 3520, def: 440, unit: 'Hz' },
   { id: 'arpWidth',    sec: 'arp', label: '積層の幅',   type: 'log', min: 0.25, max: 3, def: 1.2, unit: 'oct' },
   { id: 'arpPan',      sec: 'arp', label: '左右の散り', type: 'lin', min: 0, max: 1, def: 0.6, unit: '%' },
   { id: 'arpRes',      sec: 'arp', label: '共鳴へ送る', type: 'lin', min: 0, max: 1, def: 0.3, unit: '%' },
 
   // 声
   { id: 'voiceCount',  sec: 'voice', label: '人数', type: 'sel', def: '1', opts: opts({ 1: '一人', 2: '二人', 3: '三人' }) },
-  { id: 'voicePitch',  sec: 'voice', label: '声の高さ', type: 'log', min: 60, max: 320, def: 115, unit: 'Hz' },
+  { id: 'voicePitch',  sec: 'voice', label: '声の高さ', type: 'log', min: 50, max: 500, def: 115, unit: 'Hz' },
   { id: 'voiceRate',   sec: 'voice', label: '話す速さ', type: 'log', min: 1, max: 7, def: 3.2, unit: '/s' },
   { id: 'voiceGap',    sec: 'voice', label: '間',       type: 'lin', min: 0, max: 1, def: 0.45, unit: '%' },
   { id: 'voiceBreath', sec: 'voice', label: '囁き',     type: 'lin', min: 0, max: 1, def: 0.25, unit: '%' },
@@ -177,6 +179,8 @@ export function defaults() {
 export function sanitize(src) {
   const o = defaults();
   if (!src) return o;
+  // 旧い保存形式：共鳴の高さはオクターブ単位（既定 1）だった
+  if (src.resOct !== undefined && src.resPitch === undefined) src = { ...src, resPitch: (src.resOct - 1) * 12 };
   for (const p of PARAMS) {
     const v = src[p.id];
     if (v === undefined || v === null) continue;
@@ -196,6 +200,7 @@ export function rootHz(root, fine = 0) { return 55 * Math.pow(2, (root + fine / 
 
 export function format(p, v) {
   switch (p.unit) {
+    case 'st': { const r = Math.round(v); return (r > 0 ? '+' : '') + r; }
     case 'bi': { const r = Math.round(v * 100); return (r > 0 ? '+' : '') + r; }
     case '%': return Math.round(norm(p, v) * 100) + '';
     case 'note': { const m = 33 + Math.round(v); return NOTES[m % 12] + (Math.floor(m / 12) - 1) + ' ' + Math.round(rootHz(v)) + 'Hz'; }

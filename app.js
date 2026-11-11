@@ -147,8 +147,8 @@ function el(tag, cls, text) { const e = document.createElement(tag); if (cls) e.
 function svg(tag, attrs) { const e = document.createElementNS(SVGNS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); return e; }
 
 // 縦に引いて回す。二度叩きで既定値へ戻る。車輪・矢印キーにも応じる
-function makeKnob(p, label, big) {
-  const k = el('div', 'knob' + (big ? ' big' : ''));
+function makeKnob(p, label, big, bare) {
+  const k = el('div', 'knob' + (big ? ' big' : '') + (bare ? ' bare' : ''));
   k.tabIndex = 0;
   k.setAttribute('role', 'slider'); k.setAttribute('aria-label', label);
   const g = svg('svg', { viewBox: '0 0 40 40' });
@@ -159,7 +159,7 @@ function makeKnob(p, label, big) {
   const ptr = svg('line', { class: 'ptr', x1: 20, y1: 11, x2: 20, y2: 15.5 });
   g.appendChild(ptr);
   const kv = el('div', 'kv');
-  k.appendChild(g); k.appendChild(el('div', 'kl', label)); k.appendChild(kv);
+  k.appendChild(g); if (!bare) k.appendChild(el('div', 'kl', label)); k.appendChild(kv);
   const bi = p.min < 0 && p.max > 0;
 
   const draw = v => {
@@ -212,6 +212,44 @@ function makeKnob(p, label, big) {
   return k;
 }
 
+// 縦フェーダー。つまみと同じく、触れた位置からの引き幅で動く（触れただけでは跳ばぬ）
+function makeFader(p, label, out) {
+  const f = el('div', 'fader');
+  f.tabIndex = 0;
+  f.setAttribute('role', 'slider'); f.setAttribute('aria-label', label); f.setAttribute('aria-orientation', 'vertical');
+  const fill = el('div', 'fill'), cap = el('div', 'cap');
+  f.appendChild(fill); f.appendChild(cap);
+  bind(p.id, v => {
+    const t = norm(p, v);
+    fill.style.height = t * 100 + '%'; cap.style.bottom = t * 100 + '%';
+    out.textContent = format(p, v);
+    f.setAttribute('aria-valuetext', out.textContent);
+  });
+  const put = t => { const v = denorm(p, Math.min(1, Math.max(0, t))); if (v !== state.params[p.id]) setParam(p.id, v); };
+  let y0 = 0, t0 = 0, lastDown = 0, drag = false;
+  f.addEventListener('pointerdown', e => {
+    const now = performance.now();
+    if (now - lastDown < 320) { setParam(p.id, p.def); lastDown = 0; return; }
+    lastDown = now;
+    drag = true; y0 = e.clientY; t0 = norm(p, state.params[p.id]);
+    f.setPointerCapture(e.pointerId);
+    e.preventDefault(); f.focus({ preventScroll: true });
+  });
+  f.addEventListener('pointermove', e => { if (drag) put(t0 + (y0 - e.clientY) / (e.shiftKey ? 560 : 140)); });
+  const end = () => { drag = false; };
+  f.addEventListener('pointerup', end); f.addEventListener('pointercancel', end);
+  f.addEventListener('wheel', e => { e.preventDefault(); put(norm(p, state.params[p.id]) + (e.deltaY < 0 ? 0.02 : -0.02)); }, { passive: false });
+  f.addEventListener('keydown', e => {
+    const d = e.shiftKey ? 0.002 : 0.01;
+    if (e.key === 'ArrowUp' || e.key === 'ArrowRight') put(norm(p, state.params[p.id]) + d);
+    else if (e.key === 'ArrowDown' || e.key === 'ArrowLeft') put(norm(p, state.params[p.id]) - d);
+    else if (e.key === 'Home' || e.key === 'Delete') setParam(p.id, p.def);
+    else return;
+    e.preventDefault();
+  });
+  return f;
+}
+
 function makeSelect(p, label) {
   const c = el('div', 'cell');
   const s = document.createElement('select');
@@ -260,6 +298,8 @@ function makePad(mx, my) {
 
 /* ---------- 画面の組み立て：表・各部・庫 ---------- */
 const LEVELS = ['droneLevel', 'noiseLevel', 'resLevel', 'arpLevel', 'voiceLevel'];
+// 表の下段：各部の音量（縦フェーダー）と高低（つまみ）
+const PARTS = [['droneLevel', 'dronePitch'], ['noiseLevel', 'noisePitch'], ['resLevel', 'resPitch'], ['arpLevel', 'arpCenter'], ['voiceLevel', 'voicePitch']];
 const secIds = sec => PARAMS.filter(p => p.sec === sec).map(p => p.id);
 const TABS = [
   { id: 'front', label: '表' },
@@ -306,7 +346,14 @@ function buildFaces() {
   for (const id of ['mxDist', 'mxWeight', 'mxDense', 'mxPresence']) mac.appendChild(makeKnob(BY_ID[id], M[id].label, true));
   front.appendChild(mac);
   const lev = el('div', 'levels');
-  for (const id of LEVELS) lev.appendChild(makeKnob(BY_ID[id], BY_ID[id].label));
+  for (const [lv, pt] of PARTS) {
+    const name = BY_ID[lv].label, part = el('div', 'part'), head = el('div', 'ph'), out = el('span', 'kv');
+    head.appendChild(el('span', 'kl', name)); head.appendChild(out);
+    part.appendChild(head);
+    part.appendChild(makeFader(BY_ID[lv], name + 'の音量', out));
+    part.appendChild(makeKnob(BY_ID[pt], name + 'の高低', false, true));
+    lev.appendChild(part);
+  }
   front.appendChild(lev);
   // 庫：プリセットの出し入れと、切替の作法
   const lib = $('f_lib');
@@ -315,7 +362,7 @@ function buildFaces() {
     <button id="share">書き出し</button><button id="load">読み込み</button>
     <div class="wide"><label>種</label><span id="seed" class="val"></span><button id="reseed">振り直す</button></div>
     <div class="wide"><label>マクロ</label><span class="val note">表のパッドと大つまみ</span><button id="zero">中央へ戻す</button></div>
-    <p class="note wide">つまみは縦に引いて回す。二度叩くと既定値へ戻る。上辺の秒数は「移ろい」、プリセットを切り替える際にかける時間である。自作のプリセットはこの端末に保存される。別の端末へは「書き出し」で渡す。</p>
+    <p class="note wide">表の下段は、縦の棒が各部の音量、つまみが高低。つまみは縦に引いて回す。二度叩くと既定値へ戻る。上辺の秒数は「移ろい」、プリセットを切り替える際にかける時間である。自作のプリセットはこの端末に保存される。別の端末へは「書き出し」で渡す。</p>
     <div class="wide"><a href="test.html">消灯再生試験</a></div>`;
 }
 

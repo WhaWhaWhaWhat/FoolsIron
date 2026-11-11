@@ -38,7 +38,7 @@ h1 { margin:0; font-size:4cqw; font-weight:500; letter-spacing:.08em; color:var(
 .face.on { display:grid; }
 
 /* 表 */
-#f_front { grid-template-columns:60cqw 1fr; grid-template-rows:1fr 19.5cqw; gap:1.2cqw; }
+#f_front { grid-template-columns:54cqw 1fr; grid-template-rows:1fr 24.5cqw; gap:1.2cqw; }
 .pad { position:relative; background:radial-gradient(circle at 50% 50%, #1a1917, var(--well)); border:1px solid var(--line);
        border-radius:1.4cqw; touch-action:none; overflow:hidden; cursor:crosshair; }
 .pad::before, .pad::after { content:''; position:absolute; background:var(--line); }
@@ -51,13 +51,27 @@ h1 { margin:0; font-size:4cqw; font-weight:500; letter-spacing:.08em; color:var(
 .pad .t { top:1cqw; left:50%; transform:translateX(40%); }     .pad .b { bottom:1cqw; left:50%; transform:translateX(40%); }
 .pad .v { left:1.4cqw; bottom:1cqw; font-variant-numeric:tabular-nums; }
 .macros { display:grid; grid-template-columns:1fr 1fr; grid-template-rows:1fr 1fr; align-items:center; }
-.levels { grid-column:1 / 3; display:grid; grid-template-columns:repeat(5,1fr); align-items:center;
-       border-top:1px solid var(--line); }
+.levels { grid-column:1 / 3; display:grid; grid-template-columns:repeat(5,1fr); border-top:1px solid var(--line); }
+.part { display:grid; grid-template-columns:auto 1fr; grid-template-rows:auto 1fr; column-gap:1.4cqw; padding:1.2cqw 1.6cqw 0;
+       border-right:1px solid var(--line); min-width:0; }
+.part:last-child { border-right:0; }
+.part .ph { grid-column:1 / 3; display:flex; justify-content:space-between; align-items:baseline; height:4.4cqw; }
+.part .ph .kl { font-size:2.9cqw; } .part .ph .kv { font-size:2.5cqw; color:var(--dim); font-variant-numeric:tabular-nums; }
+.part .knob { align-self:center; }
+.knob.bare svg { width:9.4cqw; height:9.4cqw; }
+
+/* 縦フェーダー */
+.fader { position:relative; width:5cqw; height:16.6cqw; touch-action:none; outline:none; cursor:ns-resize; }
+.fader::before { content:''; position:absolute; left:50%; top:0; bottom:0; width:1.2cqw; margin-left:-0.6cqw; border-radius:0.6cqw; background:#2b2926; }
+.fader .fill { position:absolute; left:50%; bottom:0; width:1.2cqw; margin-left:-0.6cqw; border-radius:0.6cqw; background:var(--acc); }
+.fader .cap { position:absolute; left:0; width:5cqw; height:2.2cqw; margin-bottom:-1.1cqw; border-radius:0.6cqw; background:#3a3733;
+       border:1px solid #57524b; box-shadow:inset 0 -0.3cqw var(--fg), 0 0.4cqw 0.8cqw rgba(0,0,0,.6); }
+.fader:focus-visible .cap { border-color:var(--acc); }
 
 /* つまみ */
 .knob { display:flex; flex-direction:column; align-items:center; touch-action:none; outline:none; cursor:ns-resize; min-width:0; }
 .knob svg { width:10cqw; height:10cqw; display:block; }
-.knob.big svg { width:14cqw; height:14cqw; }
+.knob.big svg { width:13cqw; height:13cqw; }
 .knob .trk { fill:none; stroke:#2b2926; stroke-width:3; stroke-linecap:round; }
 .knob .arc { fill:none; stroke:var(--acc); stroke-width:3; stroke-linecap:round; }
 .knob .cap { fill:#23211f; stroke:#3b3834; stroke-width:1; }

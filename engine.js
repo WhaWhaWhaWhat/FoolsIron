@@ -134,6 +134,8 @@ class Drone {
 }
 
 /* ---------- 雑音：白・桃・茶 ---------- */
+// 帯域を移すと痩せる分の埋め合わせ。高域側は耳につくので半ばまで
+const MAKEUP = (pt, c) => Math.pow(10, pt * pt * (pt < 0 ? 12 - 6 * c : 5 + 8 * c) / 20);
 class Noise {
   constructor(rng) {
     this.rng = rng;
@@ -141,6 +143,7 @@ class Noise {
     this.br = [0, 0];
     this.swPh = rng(); this.swVar = 1;
     this.gL = 0; this.gR = 0; this.gE = 0;
+    this.fs = [new Float64Array(4), new Float64Array(4)];     // 帯域を移す濾波の状態
     this.buf = [new Float32Array(128), new Float32Array(128)];
   }
   render(P, n, tL, tR, excN) {
@@ -150,9 +153,16 @@ class Noise {
     if (c < 0.5) { wW = Math.cos(c * Math.PI); wP = Math.sin(c * Math.PI); }
     else { wP = Math.cos((c - 0.5) * Math.PI); wB = Math.sin((c - 0.5) * Math.PI); }
     wW *= 0.35; wP *= 0.118; wB *= 2.3;       // 三色の実効値を揃える係数
+    // 高低：負なら高域を削り、正なら低域を削る（いずれも 12dB/oct）
+    const pt = P.noisePitch;
+    const kl = 1 - Math.exp(-2 * Math.PI * (pt < 0 ? 20000 * Math.pow(0.006, -pt) : 20000) / SR);
+    const kh = 1 - Math.exp(-2 * Math.PI * (pt > 0 ? 20 * Math.pow(250, pt) : 20) / SR);
+    const mk = MAKEUP(pt, c);
     for (let ch = 0; ch < 2; ch++) {
       const b = this.b[ch], o = this.buf[ch];
       let br = this.br[ch];
+      const fs = this.fs[ch];
+      let l1 = fs[0], l2 = fs[1], h1 = fs[2], h2 = fs[3];
       let b0 = b[0], b1 = b[1], b2 = b[2], b3 = b[3], b4 = b[4], b5 = b[5], b6 = b[6];
       for (let k = 0; k < n; k++) {
         const w = white();
@@ -162,8 +172,12 @@ class Noise {
         const pink = b0 + b1 + b2 + b3 + b4 + b5 + b6 + w * 0.5362;
         b6 = w * 0.115926;
         br = (br + 0.02 * w) / 1.02;
-        o[k] = w * wW + pink * wP + br * wB;
+        let y = w * wW + pink * wP + br * wB;
+        l1 += (y - l1) * kl; l2 += (l1 - l2) * kl; y = l2;
+        h1 += (y - h1) * kh; y -= h1; h2 += (y - h2) * kh; y -= h2;
+        o[k] = y * mk;
       }
+      fs[0] = l1; fs[1] = l2; fs[2] = h1; fs[3] = h2;
       b[0] = b0; b[1] = b1; b[2] = b2; b[3] = b3; b[4] = b4; b[5] = b5; b[6] = b6;
       this.br[ch] = br;
     }
@@ -207,7 +221,7 @@ class ResBank {
     const top = Math.min(SR * 0.42, 10000);
     for (let k = 0; k < this.N; k++) {
       const oct = Math.floor(k / L);
-      const lt = Math.log2(f0 * ratios[k % L]) + P.resOct + oct;
+      const lt = Math.log2(f0 * ratios[k % L]) + 1 + P.resPitch / 12 + oct;
       if (this.lf[k] < 0) this.lf[k] = lt;
       this.lf[k] += (lt - this.lf[k]) * kf;
       const f = Math.pow(2, this.lf[k]);
@@ -757,7 +771,7 @@ class FoolsIron extends AudioWorkletProcessor {
     t = P.droneLevel * P.droneLevel;
     if (t > 1e-6 || g.drone > 1e-6) {
       tL.fill(0); tR.fill(0);
-      this.drone.render(P, S, f0, n, tL, tR);
+      this.drone.render(P, S, f0 * Math.pow(2, P.dronePitch / 12), n, tL, tR);
       mixTo(n, tL, tR, g.drone, t, dL, dR, 0.35, wL, wR);
     }
     g.drone = t;
