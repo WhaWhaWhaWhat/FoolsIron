@@ -19,11 +19,12 @@ button:disabled { opacity:.35; }
 select { text-overflow:ellipsis; }
 
 header { display:flex; align-items:center; gap:1.6cqw; padding:0 2.4cqw; border-bottom:1px solid var(--line); }
-h1 { margin:0; font-size:4.3cqw; font-weight:500; letter-spacing:.14em; color:var(--acc); }
+h1 { margin:0; font-size:4cqw; font-weight:500; letter-spacing:.08em; color:var(--acc); }
 #preset { flex:1; }
+#morph { flex:0 0 15.5cqw; padding:0 0.8cqw; }
 #dirty { width:1.6cqw; height:1.6cqw; border-radius:50%; background:transparent; flex:none; }
 #dirty.on { background:var(--acc); }
-#play { width:17cqw; border-color:var(--acc); flex:none; }
+#play { width:16cqw; padding:0; border-color:var(--acc); flex:none; }
 #play.on { background:var(--acc); color:#0b0b0c; }
 
 #tabs { display:flex; border-bottom:1px solid var(--line); background:var(--well); }

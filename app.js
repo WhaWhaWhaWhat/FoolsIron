@@ -313,12 +313,9 @@ function buildFaces() {
   lib.innerHTML = `
     <button id="save">保存</button><button id="del">削除</button>
     <button id="share">書き出し</button><button id="load">読み込み</button>
-    <div class="wide"><label for="morph">移ろい</label><select id="morph">
-      <option value="0">即時</option><option value="5">5秒かけて</option><option value="15">15秒かけて</option>
-      <option value="30">30秒かけて</option><option value="60">60秒かけて</option></select></div>
     <div class="wide"><label>種</label><span id="seed" class="val"></span><button id="reseed">振り直す</button></div>
     <div class="wide"><label>マクロ</label><span class="val note">表のパッドと大つまみ</span><button id="zero">中央へ戻す</button></div>
-    <p class="note wide">つまみは縦に引いて回す。二度叩くと既定値へ戻る。自作のプリセットはこの端末に保存される。別の端末へは「書き出し」で渡す。</p>
+    <p class="note wide">つまみは縦に引いて回す。二度叩くと既定値へ戻る。上辺の秒数は「移ろい」、プリセットを切り替える際にかける時間である。自作のプリセットはこの端末に保存される。別の端末へは「書き出し」で渡す。</p>
     <div class="wide"><a href="test.html">消灯再生試験</a></div>`;
 }
 
@@ -327,10 +324,12 @@ showTab(TABS.some(t => t.id === settings.tab) ? settings.tab : 'front');
 
 /* ---------- 状態とプリセット ---------- */
 let saveTimer = 0;
-function persist() {
+function flush() {
   clearTimeout(saveTimer);
-  saveTimer = setTimeout(() => store.set(KEY.state, { name: state.name, seed: state.seed, p: diff(state.params), src: state.src, dirty: state.dirty }), 300);
+  store.set(KEY.state, { name: state.name, seed: state.seed, p: diff(state.params), src: state.src, dirty: state.dirty });
 }
+function persist() { clearTimeout(saveTimer); saveTimer = setTimeout(flush, 300); }
+addEventListener('pagehide', flush);     // 動かした直後に頁を閉じても失わぬように
 function touch() {
   if (!state.dirty) { state.dirty = true; showHead(); }
   persist();
