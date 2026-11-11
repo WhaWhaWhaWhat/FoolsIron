@@ -34,6 +34,7 @@ export const SECTIONS = [
   { id: 'res',   label: 'RES' },
   { id: 'arp',   label: 'ARP' },
   { id: 'voice', label: '声' },
+  { id: 'fx',    label: 'FX' },
   { id: 'lfo1',  label: 'LFO 1' },
   { id: 'lfo2',  label: 'LFO 2' },
 ];
@@ -133,6 +134,24 @@ export const PARAMS = [
   { id: 'voiceFar',    sec: 'voice', label: '遠さ',     type: 'lin', min: 0, max: 1, def: 0.5, unit: '%' },
   { id: 'voiceSpread', sec: 'voice', label: 'ステレオ幅', type: 'lin', min: 0, max: 1, def: 0.6, unit: '%' },
   { id: 'voiceRes',    sec: 'voice', label: 'RES 送り', type: 'lin', min: 0, max: 1, def: 0.2, unit: '%' },
+
+  // FX：フェイザー（ドローンとノイズに掛かる）、テープエコー、ダブ卓の自動演奏
+  { id: 'phaserMix',   sec: 'fx', label: 'フェイザー', type: 'lin', min: 0, max: 1, def: 0, unit: '%' },
+  { id: 'phaserRate',  sec: 'fx', label: 'Ph レート',  type: 'log', min: 0.01, max: 2, def: 0.08, unit: 'Hz' },
+  { id: 'phaserDepth', sec: 'fx', label: 'Ph デプス',  type: 'lin', min: 0, max: 1, def: 0.8, unit: '%' },
+  { id: 'phaserFb',    sec: 'fx', label: 'Ph 帰還',    type: 'lin', min: 0, max: 0.9, def: 0.5, unit: '%' },
+  { id: 'echoMix',     sec: 'fx', label: 'エコー',     type: 'lin', min: 0, max: 1, def: 0, unit: '%' },
+  { id: 'echoTime',    sec: 'fx', label: 'ディレイ',   type: 'log', min: 0.05, max: 1.5, def: 0.38, unit: 's2' },
+  { id: 'echoFb',      sec: 'fx', label: 'フィードバック', type: 'lin', min: 0, max: 1.1, def: 0.55, unit: '%' },
+  { id: 'echoTone',    sec: 'fx', label: 'トーン',     type: 'lin', min: 0, max: 1, def: 0.4, unit: '%' },
+  { id: 'echoWow',     sec: 'fx', label: 'ワウ',       type: 'lin', min: 0, max: 1, def: 0.3, unit: '%' },
+  { id: 'echoPing',    sec: 'fx', label: 'ピンポン',   type: 'lin', min: 0, max: 1, def: 0.5, unit: '%' },
+  { id: 'droneEcho',   sec: 'fx', label: '送り ドローン', type: 'lin', min: 0, max: 1, def: 0, unit: '%' },
+  { id: 'noiseEcho',   sec: 'fx', label: '送り ノイズ',   type: 'lin', min: 0, max: 1, def: 0, unit: '%' },
+  { id: 'resEcho',     sec: 'fx', label: '送り RES',      type: 'lin', min: 0, max: 1, def: 0.3, unit: '%' },
+  { id: 'arpEcho',     sec: 'fx', label: '送り ARP',      type: 'lin', min: 0, max: 1, def: 0.5, unit: '%' },
+  { id: 'voiceEcho',   sec: 'fx', label: '送り 声',       type: 'lin', min: 0, max: 1, def: 0.5, unit: '%' },
+  { id: 'dub',         sec: 'fx', label: 'ダブ',       type: 'lin', min: 0, max: 1, def: 0, unit: '%' },
 ];
 
 // LFO は二基。対象は段階を持たぬ連続量すべて
@@ -205,6 +224,7 @@ export function format(p, v) {
     case '%': return Math.round(norm(p, v) * 100) + '';
     case 'note': { const m = 33 + Math.round(v); return NOTES[m % 12] + (Math.floor(m / 12) - 1) + ' ' + Math.round(rootHz(v)) + 'Hz'; }
     case 'Hz': return (v >= 100 ? Math.round(v) : v >= 10 ? v.toFixed(1) : v >= 1 ? v.toFixed(2) : v.toFixed(3)) + 'Hz';
+    case 's2': return (v >= 1 ? v.toFixed(2) : v.toFixed(3)) + '秒';
     case 's': return (v >= 10 ? v.toFixed(0) : v.toFixed(1)) + '秒';
     case 'cent': return (v > 0 ? '+' : '') + v.toFixed(0) + '¢';
     case '/s': return (v >= 1 ? v.toFixed(1) : v.toFixed(2)) + '/秒';
@@ -246,4 +266,12 @@ export const FACTORY = [
     p: { droneLevel: 0.25, noiseLevel: 0.6, resLevel: 0.3, voiceLevel: 0.9, voiceCount: '2', voiceBreath: 1,
          voiceCons: 0.6, voiceRate: 3, voiceGap: 0.55, voiceFar: 0.3, voiceRes: 0.1, noiseColor: 0.6,
          noiseSwell: 0.3, tone: 7000, droneBright: 0.15, droneParts: 5, space: 0.4, spaceDecay: 4 } },
+  { name: '電気嵐', seed: 1969,
+    p: { droneLevel: 0.6, noiseLevel: 0.4, resLevel: 0.4, arpLevel: 0.45, arpMode: 'gliss', arpDir: 'pend', arpRate: 0.6,
+         phaserMix: 0.8, phaserRate: 0.06, phaserFb: 0.7, noiseColor: 0.45, droneBright: 0.6, droneBeat: 1.2,
+         echoMix: 0.45, echoTime: 0.42, echoFb: 0.6, resEcho: 0.5, arpEcho: 0.7, space: 0.5 } },
+  { name: 'ダブ', seed: 1976,
+    p: { droneLevel: 0.5, dronePitch: -12, subLevel: 0.6, noiseLevel: 0.2, resLevel: 0.45, arpLevel: 0.6, arpMode: 'step',
+         arpDir: 'walk', arpRate: 1.4, arpGate: 0.6, arpSoft: 0.25, arpWidth: 0.5, arpRest: 0.35, scale: 'pentam',
+         dub: 0.6, echoMix: 0.5, echoTime: 0.45, echoFb: 0.68, echoTone: 0.3, arpEcho: 0.6, space: 0.45 } },
 ];

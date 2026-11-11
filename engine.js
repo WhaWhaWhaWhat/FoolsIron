@@ -48,14 +48,15 @@ function panL(p) { return Math.cos((clamp(p, -1, 1) + 1) * Math.PI / 4) * Math.S
 function panR(p) { return Math.sin((clamp(p, -1, 1) + 1) * Math.PI / 4) * Math.SQRT2; }
 
 // 発音部の出力を、音量を滑らかに渡しながら乾音と残響送りへ足す
-function mixTo(n, sL, sR, g0, g1, dL, dR, send, wL, wR) {
-  const dg = (g1 - g0) / n;
-  let g = g0;
+function mixTo(n, sL, sR, g0, g1, dL, dR, send, wL, wR, e0, e1, eL, eR) {
+  const dg = (g1 - g0) / n, de = (e1 - e0) / n;
+  let g = g0, e = e0;
   for (let k = 0; k < n; k++) {
-    g += dg;
+    g += dg; e += de;
     const l = sL[k] * g, r = sR[k] * g;
     dL[k] += l; dR[k] += r;
     wL[k] += l * send; wR[k] += r * send;
+    eL[k] += l * e; eR[k] += r * e;
   }
 }
 
@@ -658,6 +659,132 @@ class Reverb {
   }
 }
 
+/* ---------- フェイザー：六段の全域通過。左右で掃引の位相をずらす ---------- */
+class Phaser {
+  constructor(ph) {
+    this.st = [new Float64Array(12), new Float64Array(12)];
+    this.fb = [0, 0]; this.a = [-1, -1]; this.ph = ph; this.m = 0;
+  }
+  process(P, n, L, R) {
+    const m1 = P.phaserMix;
+    this.ph += P.phaserRate * n / SR; this.ph -= Math.floor(this.ph);
+    if (m1 < 0.002 && this.m < 0.002) { this.m = m1; return; }
+    const fbk = P.phaserFb, dm = (m1 - this.m) / n;
+    for (let ch = 0; ch < 2; ch++) {
+      const buf = ch ? R : L, st = this.st[ch];
+      const l = Math.sin(2 * Math.PI * (this.ph + ch * 0.25));
+      const tn = Math.tan(Math.PI * 760 * Math.pow(4.2, l * P.phaserDepth) / SR), a1 = (1 - tn) / (1 + tn);
+      let a = this.a[ch] < 0 ? a1 : this.a[ch], fb = this.fb[ch], m = this.m;
+      const da = (a1 - a) / n;
+      for (let k = 0; k < n; k++) {
+        a += da; m += dm;
+        const x = buf[k];
+        let y = x + fb * fbk + 1e-20;
+        for (let q = 0; q < 12; q += 2) {
+          const o = -a * y + st[q] + a * st[q + 1];
+          st[q] = y; st[q + 1] = o; y = o;
+        }
+        fb = y;
+        buf[k] = x * (1 - 0.5 * m) + y * 0.5 * m;
+      }
+      this.a[ch] = a1; this.fb[ch] = fb;
+    }
+    this.m = m1;
+  }
+}
+
+/* ---------- テープエコー：繰り返すたびに曇り、揺れ、帰還を上げれば自ら鳴り出す ---------- */
+class Echo {
+  constructor() {
+    this.N = Math.ceil(SR * 2.4);
+    this.bL = new Float32Array(this.N); this.bR = new Float32Array(this.N);
+    this.w = 0; this.d = 0.38 * SR;
+    this.lp = [0, 0]; this.hp = [0, 0]; this.wph = 0; this.fph = 0; this.idle = true;
+  }
+  process(P, n, inL, inR, outL, outR, wL, wR, g0, g1, fbExtra) {
+    if (g0 < 1e-5 && g1 < 1e-5) { this.idle = true; return; }
+    if (this.idle) { this.bL.fill(0); this.bR.fill(0); this.lp[0] = this.lp[1] = this.hp[0] = this.hp[1] = 0; this.idle = false; }
+    const N = this.N, bL = this.bL, bR = this.bR;
+    const dt = clamp(P.echoTime, 0.03, 2.2) * SR, kd = 1 - Math.exp(-1 / (0.25 * SR));
+    const fb = Math.min(1.12, P.echoFb + fbExtra), ping = P.echoPing;
+    const kl = 1 - Math.exp(-2 * Math.PI * 700 * Math.pow(12, P.echoTone) / SR);
+    const kh = 1 - Math.exp(-2 * Math.PI * 130 / SR);
+    const wow = P.echoWow, dg = (g1 - g0) / n;
+    let g = g0, w = this.w, d = this.d, wph = this.wph, fph = this.fph;
+    let lpL = this.lp[0], lpR = this.lp[1], hpL = this.hp[0], hpR = this.hp[1];
+    for (let k = 0; k < n; k++) {
+      d += (dt - d) * kd;                         // 長さを変えると、テープのように音高が滑る
+      wph += 0.55 / SR; if (wph >= 1) wph -= 1;
+      fph += 6.3 / SR; if (fph >= 1) fph -= 1;
+      const md = d * (1 + wow * (0.004 * SIN[(wph * TS) | 0] + 0.0007 * SIN[(fph * TS) | 0]));
+      let pos = w - md; if (pos < 0) pos += N;
+      const i = pos | 0, fr = pos - i, j = i + 1 >= N ? 0 : i + 1;
+      let yl = bL[i] + (bL[j] - bL[i]) * fr, yr = bR[i] + (bR[j] - bR[i]) * fr;
+      lpL += (yl - lpL) * kl; hpL += (lpL - hpL) * kh; yl = lpL - hpL;
+      lpR += (yr - lpR) * kl; hpR += (lpR - hpR) * kh; yr = lpR - hpR;
+      const sl = Math.tanh(yl), sr = Math.tanh(yr);      // テープの飽和。帰還が 1 を超えても発散しない
+      const il = inL[k], ir = inR[k], mono = (il + ir) * 0.5;
+      bL[w] = il * (1 - ping) + mono * ping + fb * (sl * (1 - ping) + sr * ping) + 1e-20;
+      bR[w] = ir * (1 - ping) + fb * (sr * (1 - ping) + sl * ping) + 1e-20;
+      if (++w >= N) w = 0;
+      g += dg;
+      const ol = yl * g * 0.7, or = yr * g * 0.7;
+      outL[k] += ol; outR[k] += or;
+      wL[k] += ol * 0.3; wR[k] += or * 0.3;
+    }
+    this.w = w; this.d = d; this.wph = wph; this.fph = fph;
+    this.lp[0] = lpL; this.lp[1] = lpR; this.hp[0] = hpL; this.hp[1] = hpR;
+  }
+}
+
+/* ---------- ダブ卓の自動演奏：時おり部を消し、エコーへ放り込み、低域を掃き、帰還を煽る ---------- */
+class Dub {
+  constructor(rng) {
+    this.rng = rng; this.next = 4;
+    this.mute = [1, 1, 1, 1, 1]; this.muteT = [1, 1, 1, 1, 1]; this.muteLeft = [0, 0, 0, 0, 0];
+    this.thr = [0, 0, 0, 0, 0]; this.thrT = [0, 0, 0, 0, 0]; this.thrLeft = [0, 0, 0, 0, 0];
+    this.hp = 0; this.swLeft = 0; this.swDur = 1; this.swDepth = 0;
+    this.swell = 0; this.swellT = 0; this.swellLeft = 0;
+  }
+  step(a, dt, active) {
+    const rng = this.rng;
+    if (a > 0.01) {
+      this.next -= dt;
+      if (this.next <= 0) {
+        this.next = (4 + 36 * (1 - a) * (1 - a)) * (0.4 + 1.2 * rng());
+        const on = [];
+        for (let i = 0; i < 5; i++) if (active[i]) on.push(i);
+        if (on.length) {
+          const i = on[Math.floor(rng() * on.length)], r = rng();
+          if (r < 0.4) { this.thrT[i] = 1; this.thrLeft[i] = 0.25 + rng() * 0.9; }
+          else if (r < 0.65) {
+            if (on.filter(q => this.muteT[q] > 0.5).length >= 2) { this.muteT[i] = 0; this.muteLeft[i] = (2 + rng() * 6) * (0.5 + a); }
+          } else if (r < 0.85) {
+            if (this.swLeft <= 0) { this.swDur = this.swLeft = 3 + rng() * 6; this.swDepth = 0.5 + 0.5 * rng(); }
+          } else { this.swellT = 1; this.swellLeft = 2 + rng() * 4; }
+        }
+      }
+    } else {
+      for (let i = 0; i < 5; i++) { this.muteLeft[i] = 0; this.thrLeft[i] = 0; }
+      this.swellLeft = 0; this.next = 2;
+    }
+    const km = 1 - Math.exp(-dt / 0.12), kt = 1 - Math.exp(-dt / 0.03), ks = 1 - Math.exp(-dt / 0.5);
+    for (let i = 0; i < 5; i++) {
+      if ((this.muteLeft[i] -= dt) <= 0) this.muteT[i] = 1;
+      if ((this.thrLeft[i] -= dt) <= 0) this.thrT[i] = 0;
+      this.mute[i] += (this.muteT[i] - this.mute[i]) * km;
+      this.thr[i] += (this.thrT[i] - this.thr[i]) * kt;
+    }
+    if ((this.swellLeft -= dt) <= 0) this.swellT = 0;
+    this.swell += (this.swellT - this.swell) * ks;
+    if (this.swLeft > 0) {
+      this.swLeft -= dt;
+      const u = Math.sin(Math.PI * clamp(1 - this.swLeft / this.swDur, 0, 1));
+      this.hp = u * u * this.swDepth;
+    } else this.hp = 0;
+  }
+}
+
 /* ---------- 処理器本体 ---------- */
 class FoolsIron extends AudioWorkletProcessor {
   constructor() {
@@ -675,10 +802,15 @@ class FoolsIron extends AudioWorkletProcessor {
     // マクロ：[つまみの番号, [対象の番号, 偏り]...]
     this.macros = MACROS.map(m => [this.ci[m.id], Object.entries(m.map).map(([k, w]) => [this.ci[k], w])]);
     this.lfo = [{ ph: 0, v: 0, hold: 0 }, { ph: 0, v: 0, hold: 0 }];
-    this.g = { drone: 0, noise: 0, res: 0, arp: 0, voice: 0, wet: 0 };
+    this.g = { drone: 0, noise: 0, res: 0, arp: 0, voice: 0, wet: 0, echo: 0 };
+    this.es = [0, 0, 0, 0, 0];             // 各部のエコー送り（前の区切りでの値）
+    this.act = [false, false, false, false, false];
+    this.mhp = [0, 0, 0, 0];
     this.lf0 = Math.log2(110);
     this.mk(128);
     this.reverb = new Reverb();
+    this.echo = new Echo();
+    this.phD = new Phaser(0); this.phN = new Phaser(0.37);
     this.bq = [0, 0, 0, 0, 0, 0, 0, 0];     // 主低域通過の状態 (x1,x2,y1,y2)×2
     this.dc = [0, 0, 0, 0];
     this.sw = 1;
@@ -689,7 +821,7 @@ class FoolsIron extends AudioWorkletProcessor {
     this.bn = n;
     const f = () => new Float32Array(n);
     this.tL = f(); this.tR = f(); this.dL = f(); this.dR = f(); this.wL = f(); this.wR = f();
-    this.eN = f(); this.eT = f();
+    this.eN = f(); this.eT = f(); this.xL = f(); this.xR = f();
   }
   seed(seed) {
     const rng = mulberry32((seed | 0) * 2654435761 | 0);
@@ -699,6 +831,7 @@ class FoolsIron extends AudioWorkletProcessor {
       this.drone = new Drone(rng); this.noise = new Noise(rng); this.res = new ResBank(rng);
       this.arp = new Arp(rng); this.speakers = [0, 1, 2].map(i => new Speaker(i, rng));
       this.lfoW = [new Wander(rng), new Wander(rng)];
+      this.dub = new Dub(rng);
     } else {
       this.arp.reseed(rng);
     }
@@ -756,7 +889,7 @@ class FoolsIron extends AudioWorkletProcessor {
     const out = outputs[0], oL = out[0], oR = out[1] || out[0], n = oL.length;
     if (n > this.bn) this.mk(n);
     this.updateParams(n);
-    const { P, S, tL, tR, dL, dR, wL, wR, eN, eT, g } = this;
+    const { P, S, tL, tR, dL, dR, wL, wR, eN, eT, xL, xR, g, es, dub } = this;
     const sk = S.scale + '|' + S.temper;
     if (sk !== this.scaleKey) { this.scaleKey = sk; this.ratios = scaleRatios(S.scale, S.temper); }
     const ratios = this.ratios;
@@ -765,69 +898,85 @@ class FoolsIron extends AudioWorkletProcessor {
     this.lf0 += (lt - this.lf0) * (1 - Math.exp(-n / SR / 0.08));
     const f0 = Math.pow(2, this.lf0);
 
-    dL.fill(0); dR.fill(0); wL.fill(0); wR.fill(0); eN.fill(0); eT.fill(0);
-    let t;
+    dL.fill(0); dR.fill(0); wL.fill(0); wR.fill(0); eN.fill(0); eT.fill(0); xL.fill(0); xR.fill(0);
+    let t, e;
+    // ダブ卓：各部の消し (mute) とエコーへの放り込み (thr) を進める
+    const act = this.act;
+    act[0] = P.droneLevel > 0.03; act[1] = P.noiseLevel > 0.03; act[2] = P.resLevel > 0.03;
+    act[3] = P.arpLevel > 0.03; act[4] = P.voiceLevel > 0.03;
+    dub.step(P.dub, n / SR, act);
 
-    t = P.droneLevel * P.droneLevel;
+    t = P.droneLevel * P.droneLevel * dub.mute[0]; e = P.droneEcho * P.droneEcho + dub.thr[0];
     if (t > 1e-6 || g.drone > 1e-6) {
       tL.fill(0); tR.fill(0);
       this.drone.render(P, S, f0 * Math.pow(2, P.dronePitch / 12), n, tL, tR);
-      mixTo(n, tL, tR, g.drone, t, dL, dR, 0.35, wL, wR);
+      this.phD.process(P, n, tL, tR);
+      mixTo(n, tL, tR, g.drone, t, dL, dR, 0.35, wL, wR, es[0], e, xL, xR);
     }
-    g.drone = t;
+    g.drone = t; es[0] = e;
 
     // 雑音は直接音が零でも、共鳴へ送るために回す
-    t = P.noiseLevel * P.noiseLevel;
+    t = P.noiseLevel * P.noiseLevel * dub.mute[1]; e = P.noiseEcho * P.noiseEcho + dub.thr[1];
     if (t > 1e-6 || g.noise > 1e-6 || (P.noiseRes > 0.001 && P.resLevel > 0.001)) {
       tL.fill(0); tR.fill(0);
       this.noise.render(P, n, tL, tR, eN);
-      mixTo(n, tL, tR, g.noise, t, dL, dR, 0.12, wL, wR);
+      this.phN.process(P, n, tL, tR);
+      mixTo(n, tL, tR, g.noise, t, dL, dR, 0.12, wL, wR, es[1], e, xL, xR);
     }
-    g.noise = t;
+    g.noise = t; es[1] = e;
 
-    t = P.arpLevel * P.arpLevel;
+    t = P.arpLevel * P.arpLevel * dub.mute[3]; e = P.arpEcho * P.arpEcho + dub.thr[3];
     if (t > 1e-6 || g.arp > 1e-6) {
       tL.fill(0); tR.fill(0);
       this.arp.render(P, S, f0, ratios, n, tL, tR, eT);
-      mixTo(n, tL, tR, g.arp, t, dL, dR, 0.9, wL, wR);
+      mixTo(n, tL, tR, g.arp, t, dL, dR, 0.9, wL, wR, es[3], e, xL, xR);
     }
-    g.arp = t;
+    g.arp = t; es[3] = e;
 
-    t = P.voiceLevel * P.voiceLevel;
+    t = P.voiceLevel * P.voiceLevel * dub.mute[4]; e = P.voiceEcho * P.voiceEcho + dub.thr[4];
     if (t > 1e-6 || g.voice > 1e-6) {
       tL.fill(0); tR.fill(0);
       const cnt = +S.voiceCount;
       for (const sp of this.speakers) sp.render(P, f0, ratios, this.lang, n, tL, tR, eT, cnt);
       const far = P.voiceFar, dry = 1 - 0.7 * far;
-      mixTo(n, tL, tR, g.voice * dry, t * dry, dL, dR, (0.4 + 1.0 * far) / dry, wL, wR);
+      mixTo(n, tL, tR, g.voice * dry, t * dry, dL, dR, (0.4 + 1.0 * far) / dry, wL, wR, es[4], e, xL, xR);
     }
-    g.voice = t;
+    g.voice = t; es[4] = e;
 
     // 声と反復の共鳴送りは、それぞれの音量に従わせる
-    t = P.resLevel * P.resLevel;
+    t = P.resLevel * P.resLevel * dub.mute[2]; e = P.resEcho * P.resEcho + dub.thr[2];
     if (t > 1e-6 || g.res > 1e-6) {
       tL.fill(0); tR.fill(0);
       this.res.render(P, f0, ratios, n, eN, eT, tL, tR);
-      mixTo(n, tL, tR, g.res, t, dL, dR, 0.7, wL, wR);
+      mixTo(n, tL, tR, g.res, t, dL, dR, 0.7, wL, wR, es[2], e, xL, xR);
     }
-    g.res = t;
+    g.res = t; es[2] = e;
+
+    // エコー。ダブを上げれば、戻りも共に上がる
+    t = Math.min(1, P.echoMix + 0.45 * P.dub); t *= t;
+    this.echo.process(P, n, xL, xR, dL, dR, wL, wR, g.echo, t, dub.swell * Math.max(0, 1.03 - P.echoFb));
+    g.echo = t;
 
     t = P.space * P.space * 0.5 * Math.pow(6 / P.spaceDecay, 0.35);
     this.reverb.process(P, n, wL, wR, dL, dR, g.wet, t);
     g.wet = t;
 
-    // 主部：広がり → 低域通過 → 直流除去 → 柔らかい頭打ち
+    // 主部：広がり → 低域除去（ダブの掃引） → 低域通過 → 直流除去 → 柔らかい頭打ち
     const fc = Math.min(P.tone, SR * 0.45), w0 = 2 * Math.PI * fc / SR;
     const al = Math.sin(w0) / 1.41421356, cs = Math.cos(w0), a0 = 1 + al;
     const b0 = (1 - cs) / 2 / a0, b1 = (1 - cs) / a0, a1 = -2 * cs / a0, a2 = (1 - al) / a0;
-    const bq = this.bq, dc = this.dc;
+    const bq = this.bq, dc = this.dc, mhp = this.mhp;
+    const kh = 1 - Math.exp(-2 * Math.PI * 20 * Math.pow(90, dub.hp) / SR);
     const sw1 = P.width * 2, dsw = (sw1 - this.sw) / n;
     let sw = this.sw;
     for (let k = 0; k < n; k++) {
       sw += dsw;
       const mid = (dL[k] + dR[k]) * 0.5, side = (dL[k] - dR[k]) * 0.5 * sw;
       for (let ch = 0; ch < 2; ch++) {
-        const o = ch * 4, x = ch ? mid - side : mid + side;
+        const o = ch * 4;
+        let x = ch ? mid - side : mid + side;
+        mhp[ch * 2] += (x - mhp[ch * 2]) * kh; x -= mhp[ch * 2];
+        mhp[ch * 2 + 1] += (x - mhp[ch * 2 + 1]) * kh; x -= mhp[ch * 2 + 1];
         let y = b0 * x + b1 * bq[o] + b0 * bq[o + 1] - a1 * bq[o + 2] - a2 * bq[o + 3] + 1e-20;
         bq[o + 1] = bq[o]; bq[o] = x; bq[o + 3] = bq[o + 2]; bq[o + 2] = y;
         const d = y - dc[ch * 2] + 0.9975 * dc[ch * 2 + 1];

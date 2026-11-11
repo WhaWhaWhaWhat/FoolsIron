@@ -309,6 +309,7 @@ const TABS = [
   { id: 'arp',   label: 'ARP', ids: ['arpLevel', ...secIds('arp')] },
   { id: 'voice', label: '声',   ids: ['voiceLevel', ...secIds('voice')] },
   { id: 'field', label: '場',   ids: [...secIds('main').filter(i => !LEVELS.includes(i)), ...secIds('tune')] },
+  { id: 'fx',    label: 'FX',   ids: secIds('fx') },
   { id: 'lfo',   label: 'LFO',  ids: [...secIds('lfo1'), ...secIds('lfo2')] },
   { id: 'lib',   label: 'プリセット' },
 ];
@@ -343,7 +344,7 @@ function buildFaces() {
   const front = $('f_front'), M = Object.fromEntries(MACROS.map(m => [m.id, m]));
   front.appendChild(makePad(M.mxLight, M.mxMotion));
   const mac = el('div', 'macros');
-  for (const id of ['mxDist', 'mxWeight', 'mxDense', 'mxPresence']) mac.appendChild(makeKnob(BY_ID[id], M[id].label, true));
+  for (const id of ['mxDist', 'mxWeight', 'mxDense', 'mxPresence', 'echoMix', 'dub']) mac.appendChild(makeKnob(BY_ID[id], BY_ID[id].label, true));
   front.appendChild(mac);
   const lev = el('div', 'levels');
   for (const [lv, pt] of PARTS) {
