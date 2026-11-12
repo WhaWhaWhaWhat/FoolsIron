@@ -34,6 +34,8 @@ export const SECTIONS = [
   { id: 'res',   label: 'RES' },
   { id: 'arp',   label: 'ARP' },
   { id: 'voice', label: '声' },
+  { id: 'flute', label: '笛' },
+  { id: 'bell',  label: '鐘' },
   { id: 'fx',    label: 'FX' },
   { id: 'lfo1',  label: 'LFO 1' },
   { id: 'lfo2',  label: 'LFO 2' },
@@ -51,7 +53,7 @@ export const MACROS = [
   { id: 'mxWeight',   label: '重さ', lo: '軽', hi: '重',
     map: { root: -0.25, subLevel: 0.4, noiseColor: 0.2, droneBright: -0.15 } },
   { id: 'mxDense',    label: '密度', lo: '疎', hi: '密',
-    map: { droneParts: 0.35, resLevel: 0.3, arpRest: -0.4, voiceGap: -0.3, noiseRes: 0.2, arpGate: 0.15 } },
+    map: { droneParts: 0.35, resLevel: 0.3, arpRest: -0.4, voiceGap: -0.3, noiseRes: 0.2, arpGate: 0.15, fluteGap: -0.3, bellGap: -0.3 } },
   { id: 'mxPresence', label: '人気', lo: '無', hi: '有',
     map: { voiceLevel: 0.6, voiceCons: 0.25, voiceGap: -0.25, voiceRes: 0.15 } },
 ];
@@ -65,6 +67,8 @@ export const PARAMS = [
   { id: 'resLevel',   sec: 'main', label: 'RES',   type: 'lin', min: 0, max: 1, def: 0.5, unit: '%' },
   { id: 'arpLevel',   sec: 'main', label: 'ARP',   type: 'lin', min: 0, max: 1, def: 0,   unit: '%' },
   { id: 'voiceLevel', sec: 'main', label: '声',     type: 'lin', min: 0, max: 1, def: 0,   unit: '%' },
+  { id: 'fluteLevel', sec: 'main', label: '笛',     type: 'lin', min: 0, max: 1, def: 0,   unit: '%' },
+  { id: 'bellLevel',  sec: 'main', label: '鐘',     type: 'lin', min: 0, max: 1, def: 0,   unit: '%' },
   { id: 'root',       sec: 'main', label: 'ルート',   type: 'lin', min: 0, max: 24, step: 1, def: 12, unit: 'note' },
   { id: 'tone',       sec: 'main', label: '明るさ', type: 'log', min: 200, max: 16000, def: 6000, unit: 'Hz' },
   { id: 'fluc',       sec: 'main', label: '揺らぎ', type: 'lin', min: 0, max: 1, def: 0.6, unit: '%' },
@@ -126,7 +130,7 @@ export const PARAMS = [
   { id: 'voiceCount',  sec: 'voice', label: '人数', type: 'sel', def: '1', opts: opts({ 1: '一人', 2: '二人', 3: '三人' }) },
   { id: 'voicePitch',  sec: 'voice', label: '声の高さ', type: 'log', min: 50, max: 500, def: 115, unit: 'Hz' },
   { id: 'voiceRate',   sec: 'voice', label: '話す速さ', type: 'log', min: 1, max: 7, def: 3.2, unit: '/s' },
-  { id: 'voiceGap',    sec: 'voice', label: '間',       type: 'lin', min: 0, max: 1, def: 0.45, unit: '%' },
+  { id: 'voiceGap',    sec: 'voice', label: '間',       type: 'lin', min: 0, max: 1, def: 0.45, unit: 'gap' },
   { id: 'voiceBreath', sec: 'voice', label: '囁き',     type: 'lin', min: 0, max: 1, def: 0.25, unit: '%' },
   { id: 'voiceCons',   sec: 'voice', label: '子音',     type: 'lin', min: 0, max: 1, def: 0.5, unit: '%' },
   { id: 'voiceTract',  sec: 'voice', label: 'フォルマント', type: 'lin', min: 0.75, max: 1.35, def: 1, unit: 'x' },
@@ -134,6 +138,34 @@ export const PARAMS = [
   { id: 'voiceFar',    sec: 'voice', label: '遠さ',     type: 'lin', min: 0, max: 1, def: 0.5, unit: '%' },
   { id: 'voiceSpread', sec: 'voice', label: 'ステレオ幅', type: 'lin', min: 0, max: 1, def: 0.6, unit: '%' },
   { id: 'voiceRes',    sec: 'voice', label: 'RES 送り', type: 'lin', min: 0, max: 1, def: 0.2, unit: '%' },
+
+  // 笛
+  { id: 'flutePitch',  sec: 'flute', label: '高低',     type: 'log', min: 60, max: 3000, def: 700, unit: 'Hz' },
+  { id: 'fluteBody',   sec: 'flute', label: '太さ',     type: 'lin', min: 0, max: 1, def: 0.15, unit: '%' },
+  { id: 'fluteBreath', sec: 'flute', label: '息',       type: 'lin', min: 0, max: 1, def: 0.4, unit: '%' },
+  { id: 'fluteLen',    sec: 'flute', label: '音の長さ', type: 'log', min: 0.15, max: 8, def: 1.2, unit: 's' },
+  { id: 'fluteNotes',  sec: 'flute', label: '音数',     type: 'lin', min: 1, max: 8, step: 1, def: 4, unit: 'n' },
+  { id: 'fluteGap',    sec: 'flute', label: '間',       type: 'lin', min: 0, max: 1, def: 0.55, unit: 'gap' },
+  { id: 'fluteRange',  sec: 'flute', label: '音域',     type: 'lin', min: 0, max: 1, def: 0.4, unit: '%' },
+  { id: 'fluteGlide',  sec: 'flute', label: 'ポルタメント', type: 'lin', min: 0, max: 1, def: 0.3, unit: '%' },
+  { id: 'fluteVib',    sec: 'flute', label: 'ビブラート', type: 'lin', min: 0, max: 1, def: 0.3, unit: '%' },
+  { id: 'fluteFar',    sec: 'flute', label: '遠さ',     type: 'lin', min: 0, max: 1, def: 0.5, unit: '%' },
+  { id: 'flutePan',    sec: 'flute', label: 'ステレオ幅', type: 'lin', min: 0, max: 1, def: 0.5, unit: '%' },
+  { id: 'fluteRes',    sec: 'flute', label: 'RES 送り', type: 'lin', min: 0, max: 1, def: 0.3, unit: '%' },
+
+  // 鐘
+  { id: 'bellPitch',   sec: 'bell', label: '高低',     type: 'log', min: 40, max: 4000, def: 440, unit: 'Hz' },
+  { id: 'bellTimbre',  sec: 'bell', label: '材質',     type: 'lin', min: 0, max: 1, def: 0.5, unit: '%' },
+  { id: 'bellDecay',   sec: 'bell', label: 'ディケイ', type: 'log', min: 0.3, max: 30, def: 6, unit: 's' },
+  { id: 'bellHard',    sec: 'bell', label: '硬さ',     type: 'lin', min: 0, max: 1, def: 0.4, unit: '%' },
+  { id: 'bellBeat',    sec: 'bell', label: 'うなり',   type: 'lin', min: 0, max: 1, def: 0.3, unit: '%' },
+  { id: 'bellNotes',   sec: 'bell', label: '音数',     type: 'lin', min: 1, max: 8, step: 1, def: 3, unit: 'n' },
+  { id: 'bellRate',    sec: 'bell', label: '打つ間隔', type: 'log', min: 0.15, max: 6, def: 1.6, unit: 's' },
+  { id: 'bellGap',     sec: 'bell', label: '間',       type: 'lin', min: 0, max: 1, def: 0.6, unit: 'gap' },
+  { id: 'bellRange',   sec: 'bell', label: '音域',     type: 'lin', min: 0, max: 1, def: 0.4, unit: '%' },
+  { id: 'bellFar',     sec: 'bell', label: '遠さ',     type: 'lin', min: 0, max: 1, def: 0.4, unit: '%' },
+  { id: 'bellPan',     sec: 'bell', label: 'ステレオ幅', type: 'lin', min: 0, max: 1, def: 0.5, unit: '%' },
+  { id: 'bellRes',     sec: 'bell', label: 'RES 送り', type: 'lin', min: 0, max: 1, def: 0.3, unit: '%' },
 
   // FX：フェイザー（ドローンとノイズに掛かる）、テープエコー、ダブ卓の自動演奏
   { id: 'phaserMix',   sec: 'fx', label: 'フェイザー', type: 'lin', min: 0, max: 1, def: 0, unit: '%' },
@@ -151,6 +183,8 @@ export const PARAMS = [
   { id: 'resEcho',     sec: 'fx', label: '送り RES',      type: 'lin', min: 0, max: 1, def: 0.3, unit: '%' },
   { id: 'arpEcho',     sec: 'fx', label: '送り ARP',      type: 'lin', min: 0, max: 1, def: 0.5, unit: '%' },
   { id: 'voiceEcho',   sec: 'fx', label: '送り 声',       type: 'lin', min: 0, max: 1, def: 0.5, unit: '%' },
+  { id: 'fluteEcho',   sec: 'fx', label: '送り 笛',       type: 'lin', min: 0, max: 1, def: 0.4, unit: '%' },
+  { id: 'bellEcho',    sec: 'fx', label: '送り 鐘',       type: 'lin', min: 0, max: 1, def: 0.4, unit: '%' },
   { id: 'dub',         sec: 'fx', label: 'ダブ',       type: 'lin', min: 0, max: 1, def: 0, unit: '%' },
 ];
 
@@ -224,6 +258,7 @@ export function format(p, v) {
     case '%': return Math.round(norm(p, v) * 100) + '';
     case 'note': { const m = 33 + Math.round(v); return NOTES[m % 12] + (Math.floor(m / 12) - 1) + ' ' + Math.round(rootHz(v)) + 'Hz'; }
     case 'Hz': return (v >= 100 ? Math.round(v) : v >= 10 ? v.toFixed(1) : v >= 1 ? v.toFixed(2) : v.toFixed(3)) + 'Hz';
+    case 'gap': { const g = 0.25 * Math.pow(240, v); return '約' + (g >= 10 ? g.toFixed(0) : g.toFixed(1)) + '秒'; }
     case 's2': return (v >= 1 ? v.toFixed(2) : v.toFixed(3)) + '秒';
     case 's': return (v >= 10 ? v.toFixed(0) : v.toFixed(1)) + '秒';
     case 'cent': return (v > 0 ? '+' : '') + v.toFixed(0) + '¢';
@@ -274,4 +309,22 @@ export const FACTORY = [
     p: { droneLevel: 0.5, dronePitch: -12, subLevel: 0.6, noiseLevel: 0.2, resLevel: 0.45, arpLevel: 0.6, arpMode: 'step',
          arpDir: 'walk', arpRate: 1.4, arpGate: 0.6, arpSoft: 0.25, arpWidth: 0.5, arpRest: 0.35, scale: 'pentam',
          dub: 0.6, echoMix: 0.5, echoTime: 0.45, echoFb: 0.68, echoTone: 0.3, arpEcho: 0.6, space: 0.45 } },
+  { name: '喫茶店', seed: 23,
+    p: { droneLevel: 0.2, noiseLevel: 0.65, resLevel: 0.2, voiceLevel: 0.85, voiceCount: '3', voiceGap: 0.8, voiceFar: 0.6,
+         voiceCons: 0.5, voiceBreath: 0.2, voiceRate: 3.6, voiceRes: 0.1, voiceSpread: 0.9, noiseColor: 0.55, noiseSwell: 0.1,
+         bellLevel: 0.35, bellPitch: 1800, bellTimbre: 0.1, bellDecay: 1.2, bellHard: 0.7, bellNotes: 2, bellRate: 0.3,
+         bellGap: 0.9, bellFar: 0.5, tone: 5000, space: 0.45, spaceDecay: 2 } },
+  { name: '霧笛', seed: 1859,
+    p: { droneLevel: 0.2, noiseLevel: 0.6, resLevel: 0.3, noiseColor: 0.9, noiseSwell: 0.7, noiseSwellT: 12, fluteLevel: 0.8,
+         flutePitch: 110, fluteBody: 0.9, fluteBreath: 0.15, fluteLen: 4.5, fluteNotes: 2, fluteGap: 0.72, fluteRange: 0.2,
+         fluteGlide: 0.5, fluteVib: 0.05, fluteFar: 0.8, fluteEcho: 0.3, echoMix: 0.3, echoTime: 0.9, echoFb: 0.4,
+         root: 9, scale: 'fifth', tone: 4000, space: 0.8, spaceDecay: 12 } },
+  { name: '彼方の笛', seed: 1928,
+    p: { droneLevel: 0.4, dronePitch: -12, droneBright: 0.2, noiseLevel: 0.2, resLevel: 0.3, fluteLevel: 0.7, flutePitch: 1400,
+         fluteBody: 0, fluteBreath: 0.6, fluteLen: 0.7, fluteNotes: 7, fluteGap: 0.6, fluteRange: 0.6, fluteGlide: 0.5,
+         fluteVib: 0.6, fluteFar: 0.6, fluteRes: 0.5, scale: 'whole', space: 0.8, spaceDecay: 10 } },
+  { name: '鐘楼', seed: 1185,
+    p: { droneLevel: 0.25, noiseLevel: 0.25, resLevel: 0.3, bellLevel: 0.8, bellPitch: 150, bellTimbre: 0.85, bellDecay: 18,
+         bellHard: 0.35, bellBeat: 0.5, bellNotes: 1, bellRate: 3, bellGap: 0.7, bellRange: 0, bellFar: 0.6, bellRes: 0.4,
+         root: 5, scale: 'pentam', tone: 5000, space: 0.7, spaceDecay: 14 } },
 ];

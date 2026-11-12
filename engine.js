@@ -522,8 +522,7 @@ class Speaker {
       if (s.n) this.segs.push({ d: 0.07 * ds, F: [250, 1500, 2500], av: 0.4, ah: 0, af: 0, nas: 1, pm: pm * 0.95 });
     });
     this.segs.push({ d: 0.08, F: lastF, av: 0, ah: 0, af: 0, pm: pm * 0.9 });
-    const g = P.voiceGap;
-    this.segs.push({ d: (0.25 + g * g * 10) * (0.5 + rng()), F: lastF, av: 0, ah: 0, af: 0, pm: 1, pause: true });
+    this.segs.push({ d: gapSec(P.voiceGap) * (0.5 + rng()), F: lastF, av: 0, ah: 0, af: 0, pm: 1, pause: true });
   }
   nextSeg(P, f0, ratios, lang) {
     if (!this.segs.length) this.buildPhrase(P, lang);
@@ -583,6 +582,9 @@ class Speaker {
         const c = -Math.exp(-2 * Math.PI * bw / SR), b = 2 * Math.exp(-Math.PI * bw / SR) * Math.cos(2 * Math.PI * f / SR);
         C[q] = c; B[q] = b; A[q] = 1 - b - c;
       }
+      if (this.tav === 0 && this.tah === 0 && this.taf === 0 && this.av < 1e-5 && this.ah < 1e-5 && this.af < 1e-5) {
+        i += sub; gE += dE * sub; continue;       // 沈黙の間は濾波を回さない
+      }
       const dp = Math.pow(2, this.lp) * (1 + 0.012 * jz + 0.02 * dz) / SR;
       const av = this.av, gV = av * (1 - br), gN = av * br * 1.5 + this.ah * (0.3 + 0.7 * cons) * 0.4 + av * 0.015;
       const gF = this.af * cons * 0.35;
@@ -625,7 +627,7 @@ class Reverb {
     this.len = [31.7, 37.9, 43.3, 47.1, 55.7, 61.3, 71.9, 79.3].map(ms => nextPrime(Math.round(ms * SR / 1000)));
     this.buf = this.len.map(l => new Float32Array(l));
     this.idx = new Int32Array(8);
-    this.lp = new Float64Array(8); this.g = new Float64Array(8); this.v = new Float64Array(8);
+    this.lp = new Float64Array(8); this.g = new Float64Array(8); this.v = new Float64Array(8); this.sl = 0;
     this.ap = [5.1, 1.73, 5.9, 2.11].map(ms => ({ b: new Float32Array(nextPrime(Math.round(ms * SR / 1000))), i: 0 }));
   }
   process(P, n, inL, inR, outL, outR, g0, g1) {
@@ -634,7 +636,7 @@ class Reverb {
     const dm = 1 - P.spaceDamp;
     const a = 1 - Math.exp(-2 * Math.PI * (11000 * dm * dm + 1200) / SR);
     const buf = this.buf, idx = this.idx, len = this.len, lp = this.lp, g = this.g, v = this.v, ap = this.ap;
-    const dg = (g1 - g0) / n;
+    const dg = (g1 - g0) / n, ks = 1 - Math.exp(-2 * Math.PI * 300 / SR);
     let gw = g0;
     for (let k = 0; k < n; k++) {
       let xl = inL[k], xr = inR[k];
@@ -653,8 +655,215 @@ class Reverb {
         if (++idx[i] >= len[i]) idx[i] = 0;
       }
       gw += dg;
-      outL[k] += (v[0] - v[2] + v[4] - v[6]) * gw;
-      outR[k] += (v[1] - v[3] + v[5] - v[7]) * gw;
+      // 低域は左右の差を落とす。低い持続音が逆相に寄ると、単一スピーカーで痩せるため
+      const l = v[0] - v[2] + v[4] - v[6], r = v[1] - v[3] + v[5] - v[7];
+      const mid = (l + r) * 0.5;
+      let side = (l - r) * 0.5;
+      this.sl += (side - this.sl) * ks; side -= this.sl;
+      outL[k] += (mid + side) * gw;
+      outR[k] += (mid - side) * gw;
+    }
+  }
+}
+
+/* ---------- 笛と鐘に共通の道具 ---------- */
+// 「間」のつまみ → 沈黙の平均秒数（0.25秒〜60秒）
+const gapSec = g => 0.25 * Math.pow(240, g);
+
+// 中心の上下 range オクターブに入る音階の音（log2 Hz）を低い順に並べる
+function ladder(f0, ratios, center, range) {
+  const lc = Math.log2(center), l0 = Math.log2(f0), out = [];
+  let best = l0, bd = 1e9;
+  for (let o = Math.floor(lc - range - l0) - 1; o <= Math.ceil(lc + range - l0) + 1; o++) {
+    for (const r of ratios) {
+      const l = l0 + o + Math.log2(r), d = Math.abs(l - lc);
+      if (d <= range) out.push(l);
+      if (d < bd) { bd = d; best = l; }
+    }
+  }
+  if (!out.length) out.push(best);
+  return out;
+}
+// 梯子の上を一、二段ずつ歩く。端では折り返す
+function walk(rng, idx, len) {
+  if (len < 2) return 0;
+  const r = rng();
+  idx += r < 0.12 ? 0 : (rng() < 0.5 ? -1 : 1) * (r < 0.75 ? 1 : 2);
+  if (idx < 0) idx = Math.min(len - 1, -idx);
+  if (idx >= len) idx = Math.max(0, 2 * (len - 1) - idx);
+  return idx;
+}
+
+/* ---------- 笛：か細い息の笛から、霧の向こうの警笛まで ---------- */
+class Flute {
+  constructor(rng) {
+    this.rng = rng; this.segs = []; this.left = Math.floor((1 + rng() * 3) * SR);
+    this.lp = Math.log2(440); this.tlp = this.lp; this.amp = 0; this.tamp = 0;
+    this.ph = 0; this.chiff = 0; this.nx = 0; this.ny = 0;
+    this.pan = 0; this.vph = rng(); this.vw = new Wander(rng); this.dw = new Wander(rng); this.aw = new Wander(rng);
+    this.l1 = 0; this.l2 = 0; this.gE = 0; this.idx = -1;
+  }
+  build(P, f0, ratios) {
+    const rng = this.rng, lad = ladder(f0, ratios, P.flutePitch, P.fluteRange * 1.5);
+    const n = 1 + Math.floor(Math.pow(rng(), 1.4) * P.fluteNotes);
+    if (this.idx < 0 || this.idx >= lad.length || rng() < 0.4) this.idx = Math.floor(rng() * lad.length);
+    for (let i = 0; i < n; i++) {
+      const d = P.fluteLen * (0.6 + rng() * 0.8) * (i === n - 1 ? 1.4 : 1);
+      this.segs.push({ d, lp: lad[this.idx], a: 0.7 + 0.3 * rng() });
+      this.idx = walk(rng, this.idx, lad.length);
+      if (i < n - 1 && rng() > P.fluteGlide) this.segs.push({ d: 0.04 + 0.1 * rng(), a: 0 });   // 吹き直し
+    }
+    this.segs.push({ d: gapSec(P.fluteGap) * (0.5 + rng()), a: 0, pause: true });
+    this.pan = (rng() * 2 - 1) * P.flutePan;
+  }
+  render(P, f0, ratios, n, tL, tR, excT) {
+    const dt = n / SR, body = P.fluteBody;
+    this.left -= n;
+    while (this.left <= 0) {
+      if (!this.segs.length) this.build(P, f0, ratios);
+      const s = this.segs.shift();
+      this.left += Math.max(n, Math.round(s.d * SR));
+      this.tamp = s.a;
+      if (s.a > 0) {
+        this.tlp = s.lp;
+        if (this.amp < 0.03) this.lp = s.lp;       // 無音からの吹き始めは滑らせない
+        this.chiff = 1;
+      }
+    }
+    this.lp += (this.tlp - this.lp) * (1 - Math.exp(-dt / (0.008 + P.fluteGlide * 0.3)));
+    const rise = this.tamp > this.amp;
+    const a1 = this.amp + (this.tamp - this.amp) * (1 - Math.exp(-dt / (rise ? 0.02 + 0.3 * body : 0.05 + 0.4 * body)));
+    const gE1 = P.fluteRes * P.fluteRes * P.fluteLevel * P.fluteLevel;
+    if (a1 < 1e-5 && this.amp < 1e-5) { this.amp = a1; this.gE = gE1; return; }
+    this.vph += (4.6 + 1.2 * this.vw.step(dt, 0.5)) * dt; this.vph -= Math.floor(this.vph);
+    const vib = Math.sin(2 * Math.PI * this.vph) * P.fluteVib * 0.03 + this.dw.step(dt, 0.3) * 0.004;
+    const f = Math.min(Math.pow(2, this.lp + vib), SR * 0.3), inc = f / SR;
+    const beta = body * 1.7 / (2 * Math.PI);
+    const trem = 1 + 0.12 * this.aw.step(dt, 3) * (0.3 + P.fluteBreath);
+    // 息：音高のまわりに絞った雑音。吹き始めに一瞬強まる
+    this.chiff *= Math.exp(-dt / 0.06);
+    const r = Math.exp(-Math.PI * (f / 5 + 60) / SR), th = 2 * Math.PI * f / SR;
+    const c = r * Math.cos(th), sn = r * Math.sin(th);
+    const gn = Math.sqrt(2 * (1 - r)) * P.fluteBreath * (0.9 + 2.2 * this.chiff);
+    const gt = 1 - 0.45 * P.fluteBreath;
+    const far = P.fluteFar, kfar = 1 - Math.exp(-2 * Math.PI * (9000 * (1 - far) * (1 - far) + 600) / SR);
+    const gl = panL(this.pan) * 0.3, gr = panR(this.pan) * 0.3;
+    const da = (a1 - this.amp) / n, dE = (gE1 - this.gE) / n;
+    let a = this.amp, gE = this.gE, p = this.ph, nx = this.nx, ny = this.ny, l1 = this.l1, l2 = this.l2;
+    for (let k = 0; k < n; k++) {
+      p += inc; if (p >= 1) p -= 1;
+      let x = p * TS, j = x | 0;
+      const s1 = SIN[j] + (SIN[j + 1] - SIN[j]) * (x - j);
+      let q = p + beta * s1; q -= Math.floor(q);            // 自己変調で倍音を足す（太さ）
+      x = q * TS; j = x | 0;
+      const s2 = SIN[j] + (SIN[j + 1] - SIN[j]) * (x - j);
+      const t = c * nx - sn * ny + white() * gn + 1e-20;
+      ny = sn * nx + c * ny; nx = t;
+      a += da; gE += dE;
+      let o = (s2 * gt + ny) * a * trem;
+      l1 += (o - l1) * kfar; l2 += (l1 - l2) * kfar; o = l2;
+      tL[k] += o * gl; tR[k] += o * gr; excT[k] += o * gE * 0.5;
+    }
+    this.amp = a1; this.gE = gE1; this.ph = p; this.nx = nx; this.ny = ny; this.l1 = l1; this.l2 = l2;
+  }
+}
+
+/* ---------- 鐘：風鈴から、遠い寺の鐘まで ---------- */
+const BELL_R = [
+  [1, 2.756, 5.404, 8.933, 13.34, 18.64, 24.8],        // 棒・風鈴
+  [0.5, 1, 1.183, 1.506, 2, 2.514, 3.011],             // 洋鐘
+  [1, 1.48, 2.02, 2.74, 3.0, 3.76, 4.07],              // 梵鐘・銅鑼寄り
+];
+const BELL_A = [
+  [1, 0.6, 0.35, 0.2, 0.12, 0.07, 0.04],
+  [0.5, 1, 0.7, 0.5, 0.6, 0.3, 0.25],
+  [1, 0.7, 0.6, 0.45, 0.4, 0.3, 0.25],
+];
+const BP = 10;       // 一打あたりの正弦の数：部分音七つ＋低い三つの唸り相手
+class Bell {
+  constructor(rng) {
+    this.rng = rng; this.q = []; this.left = Math.floor((1 + rng() * 4) * SR); this.idx = -1; this.pan = 0;
+    this.v = [];
+    for (let i = 0; i < 6; i++) this.v.push({ on: false, inc: new Float64Array(BP), ph: new Float64Array(BP), env: new Float64Array(BP), dec: new Float64Array(BP) });
+    this.m = new Float32Array(128); this.fl = [0, 0, 0, 0]; this.gE = 0;
+  }
+  build(P, f0, ratios) {
+    const rng = this.rng, lad = ladder(f0, ratios, P.bellPitch, P.bellRange * 1.5);
+    const n = 1 + Math.floor(Math.pow(rng(), 1.4) * P.bellNotes);
+    if (this.idx < 0 || this.idx >= lad.length || rng() < 0.4) this.idx = Math.floor(rng() * lad.length);
+    for (let i = 0; i < n; i++) {
+      this.q.push({ lp: lad[this.idx], vel: 0.6 + 0.4 * rng(), wait: P.bellRate * (0.85 + 0.3 * rng()) });
+      this.idx = walk(rng, this.idx, lad.length);
+    }
+    this.q.push({ wait: gapSec(P.bellGap) * (0.5 + rng()) });
+    this.pan = (rng() * 2 - 1) * P.bellPan;
+  }
+  strike(P, lp, vel) {
+    let v = this.v.find(x => !x.on);
+    if (!v) { v = this.v[0]; for (const x of this.v) if (x.env[0] + x.env[1] < v.env[0] + v.env[1]) v = x; }
+    const rng = this.rng, hard = P.bellHard;
+    const x = Math.min(P.bellTimbre * 2, 1.9999), si = x | 0, fr = x - si;
+    const f = Math.pow(2, lp);
+    let sumsq = 0, rmin = 1e9;
+    const rat = [], amp = [];
+    for (let i = 0; i < 7; i++) {
+      rat.push(Math.pow(2, Math.log2(BELL_R[si][i]) * (1 - fr) + Math.log2(BELL_R[si + 1][i]) * fr));
+      amp.push((BELL_A[si][i] * (1 - fr) + BELL_A[si + 1][i] * fr) * Math.pow(i + 1, -1.6 * (1 - hard)));
+      rmin = Math.min(rmin, rat[i]);
+    }
+    for (let i = 0; i < BP; i++) {
+      const src = i < 7 ? i : i - 7, pair = src < 3;
+      let fq = f * rat[src];
+      if (i >= 7) fq *= 1 + P.bellBeat * 0.006 * (0.5 + rng());       // 唸りの相手
+      const a = fq < SR * 0.45 ? amp[src] * (i >= 7 ? 0.4 : pair ? 0.75 : 1) : 0;    // 唸りは浅く。完全には打ち消さない
+      v.inc[i] = fq / SR; v.ph[i] = rng(); v.env[i] = a;
+      v.dec[i] = Math.exp(-LN1000 / (clamp(P.bellDecay / Math.pow(rat[src] / rmin, 0.75), 0.05, 60) * SR));
+      sumsq += a * a;
+    }
+    const nrm = 0.28 * vel / Math.sqrt(sumsq || 1);
+    for (let i = 0; i < BP; i++) v.env[i] *= nrm;
+    v.on = true; v.attLen = Math.round((0.002 + (1 - hard) * 0.03) * SR); v.att = 0;
+    v.gl = panL(this.pan + (rng() - 0.5) * 0.3 * P.bellPan); v.gr = panR(this.pan + (rng() - 0.5) * 0.3 * P.bellPan);
+  }
+  render(P, f0, ratios, n, tL, tR, excT) {
+    if (this.m.length < n) this.m = new Float32Array(n);
+    this.left -= n;
+    while (this.left <= 0) {
+      if (!this.q.length) this.build(P, f0, ratios);
+      const e = this.q.shift();
+      this.left += Math.max(n, Math.round(e.wait * SR));
+      if (e.lp !== undefined) this.strike(P, e.lp, e.vel);
+    }
+    const m = this.m, gE = P.bellRes * P.bellRes * P.bellLevel * P.bellLevel * 0.5;
+    const far = P.bellFar, kfar = 1 - Math.exp(-2 * Math.PI * (10000 * (1 - far) * (1 - far) + 700) / SR);
+    const fl = this.fl;
+    for (const v of this.v) {
+      if (!v.on) continue;
+      m.fill(0, 0, n);
+      let alive = false;
+      for (let i = 0; i < BP; i++) {
+        let e = v.env[i];
+        if (e < 2e-5) continue;
+        alive = true;
+        const inc = v.inc[i], dec = v.dec[i];
+        let p = v.ph[i];
+        for (let k = 0; k < n; k++) {
+          const x = p * TS, j = x | 0;
+          m[k] += (SIN[j] + (SIN[j + 1] - SIN[j]) * (x - j)) * e;
+          e *= dec; p += inc; if (p >= 1) p -= 1;
+        }
+        v.env[i] = e; v.ph[i] = p;
+      }
+      if (!alive) { v.on = false; continue; }
+      for (let k = 0; k < n; k++) {
+        let o = m[k];
+        if (v.att < v.attLen) o *= ++v.att / v.attLen;
+        tL[k] += o * v.gl; tR[k] += o * v.gr; excT[k] += o * gE;
+      }
+    }
+    for (let k = 0; k < n; k++) {              // 遠さ：高域を落とす
+      fl[0] += (tL[k] - fl[0]) * kfar; fl[1] += (fl[0] - fl[1]) * kfar; tL[k] = fl[1];
+      fl[2] += (tR[k] - fl[2]) * kfar; fl[3] += (fl[2] - fl[3]) * kfar; tR[k] = fl[3];
     }
   }
 }
@@ -737,12 +946,14 @@ class Echo {
   }
 }
 
+const NP = 7;        // 部の数：ドローン・ノイズ・RES・ARP・声・笛・鐘
 /* ---------- ダブ卓の自動演奏：時おり部を消し、エコーへ放り込み、低域を掃き、帰還を煽る ---------- */
 class Dub {
   constructor(rng) {
     this.rng = rng; this.next = 4;
-    this.mute = [1, 1, 1, 1, 1]; this.muteT = [1, 1, 1, 1, 1]; this.muteLeft = [0, 0, 0, 0, 0];
-    this.thr = [0, 0, 0, 0, 0]; this.thrT = [0, 0, 0, 0, 0]; this.thrLeft = [0, 0, 0, 0, 0];
+    const z = v => new Array(NP).fill(v);
+    this.mute = z(1); this.muteT = z(1); this.muteLeft = z(0);
+    this.thr = z(0); this.thrT = z(0); this.thrLeft = z(0);
     this.hp = 0; this.swLeft = 0; this.swDur = 1; this.swDepth = 0;
     this.swell = 0; this.swellT = 0; this.swellLeft = 0;
   }
@@ -753,7 +964,7 @@ class Dub {
       if (this.next <= 0) {
         this.next = (4 + 36 * (1 - a) * (1 - a)) * (0.4 + 1.2 * rng());
         const on = [];
-        for (let i = 0; i < 5; i++) if (active[i]) on.push(i);
+        for (let i = 0; i < NP; i++) if (active[i]) on.push(i);
         if (on.length) {
           const i = on[Math.floor(rng() * on.length)], r = rng();
           if (r < 0.4) { this.thrT[i] = 1; this.thrLeft[i] = 0.25 + rng() * 0.9; }
@@ -765,11 +976,11 @@ class Dub {
         }
       }
     } else {
-      for (let i = 0; i < 5; i++) { this.muteLeft[i] = 0; this.thrLeft[i] = 0; }
+      for (let i = 0; i < NP; i++) { this.muteLeft[i] = 0; this.thrLeft[i] = 0; }
       this.swellLeft = 0; this.next = 2;
     }
     const km = 1 - Math.exp(-dt / 0.12), kt = 1 - Math.exp(-dt / 0.03), ks = 1 - Math.exp(-dt / 0.5);
-    for (let i = 0; i < 5; i++) {
+    for (let i = 0; i < NP; i++) {
       if ((this.muteLeft[i] -= dt) <= 0) this.muteT[i] = 1;
       if ((this.thrLeft[i] -= dt) <= 0) this.thrT[i] = 0;
       this.mute[i] += (this.muteT[i] - this.mute[i]) * km;
@@ -802,9 +1013,9 @@ class FoolsIron extends AudioWorkletProcessor {
     // マクロ：[つまみの番号, [対象の番号, 偏り]...]
     this.macros = MACROS.map(m => [this.ci[m.id], Object.entries(m.map).map(([k, w]) => [this.ci[k], w])]);
     this.lfo = [{ ph: 0, v: 0, hold: 0 }, { ph: 0, v: 0, hold: 0 }];
-    this.g = { drone: 0, noise: 0, res: 0, arp: 0, voice: 0, wet: 0, echo: 0 };
-    this.es = [0, 0, 0, 0, 0];             // 各部のエコー送り（前の区切りでの値）
-    this.act = [false, false, false, false, false];
+    this.g = { drone: 0, noise: 0, res: 0, arp: 0, voice: 0, flute: 0, bell: 0, wet: 0, echo: 0 };
+    this.es = new Array(NP).fill(0);             // 各部のエコー送り（前の区切りでの値）
+    this.act = new Array(NP).fill(false);
     this.mhp = [0, 0, 0, 0];
     this.lf0 = Math.log2(110);
     this.mk(128);
@@ -832,6 +1043,7 @@ class FoolsIron extends AudioWorkletProcessor {
       this.arp = new Arp(rng); this.speakers = [0, 1, 2].map(i => new Speaker(i, rng));
       this.lfoW = [new Wander(rng), new Wander(rng)];
       this.dub = new Dub(rng);
+      this.flute = new Flute(rng); this.bell = new Bell(rng);
     } else {
       this.arp.reseed(rng);
     }
@@ -903,7 +1115,7 @@ class FoolsIron extends AudioWorkletProcessor {
     // ダブ卓：各部の消し (mute) とエコーへの放り込み (thr) を進める
     const act = this.act;
     act[0] = P.droneLevel > 0.03; act[1] = P.noiseLevel > 0.03; act[2] = P.resLevel > 0.03;
-    act[3] = P.arpLevel > 0.03; act[4] = P.voiceLevel > 0.03;
+    act[3] = P.arpLevel > 0.03; act[4] = P.voiceLevel > 0.03; act[5] = P.fluteLevel > 0.03; act[6] = P.bellLevel > 0.03;
     dub.step(P.dub, n / SR, act);
 
     t = P.droneLevel * P.droneLevel * dub.mute[0]; e = P.droneEcho * P.droneEcho + dub.thr[0];
@@ -943,7 +1155,18 @@ class FoolsIron extends AudioWorkletProcessor {
     }
     g.voice = t; es[4] = e;
 
-    // 声と反復の共鳴送りは、それぞれの音量に従わせる
+    for (const [key, i, part] of [['flute', 5, this.flute], ['bell', 6, this.bell]]) {
+      const lv = P[key + 'Level'], far = P[key + 'Far'], dry = 1 - 0.7 * far;
+      t = lv * lv * dub.mute[i]; e = P[key + 'Echo'] * P[key + 'Echo'] + dub.thr[i];
+      if (t > 1e-6 || g[key] > 1e-6) {
+        tL.fill(0); tR.fill(0);
+        part.render(P, f0, ratios, n, tL, tR, eT);
+        mixTo(n, tL, tR, g[key] * dry, t * dry, dL, dR, (0.4 + 1.0 * far) / dry, wL, wR, es[i], e, xL, xR);
+      }
+      g[key] = t; es[i] = e;
+    }
+
+    // 声・反復・笛・鐘の共鳴送りは、それぞれの音量に従わせる
     t = P.resLevel * P.resLevel * dub.mute[2]; e = P.resEcho * P.resEcho + dub.thr[2];
     if (t > 1e-6 || g.res > 1e-6) {
       tL.fill(0); tR.fill(0);

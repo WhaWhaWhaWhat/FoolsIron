@@ -297,19 +297,21 @@ function makePad(mx, my) {
 }
 
 /* ---------- 画面の組み立て：表・各部・庫 ---------- */
-const LEVELS = ['droneLevel', 'noiseLevel', 'resLevel', 'arpLevel', 'voiceLevel'];
+const LEVELS = ['droneLevel', 'noiseLevel', 'resLevel', 'arpLevel', 'voiceLevel', 'fluteLevel', 'bellLevel'];
 // 表の下段：各部の音量（縦フェーダー）と高低（つまみ）
-const PARTS = [['droneLevel', 'dronePitch'], ['noiseLevel', 'noisePitch'], ['resLevel', 'resPitch'], ['arpLevel', 'arpCenter'], ['voiceLevel', 'voicePitch']];
+const PARTS = [['droneLevel', 'dronePitch'], ['noiseLevel', 'noisePitch'], ['resLevel', 'resPitch'], ['arpLevel', 'arpCenter'], ['voiceLevel', 'voicePitch'], ['fluteLevel', 'flutePitch'], ['bellLevel', 'bellPitch']];
 const secIds = sec => PARAMS.filter(p => p.sec === sec).map(p => p.id);
 const TABS = [
   { id: 'front', label: '表' },
-  { id: 'drone', label: 'ドローン', ids: ['droneLevel', ...secIds('drone')] },
-  { id: 'noise', label: 'ノイズ', ids: ['noiseLevel', ...secIds('noise')] },
-  { id: 'res',   label: 'RES', ids: ['resLevel', ...secIds('res')] },
-  { id: 'arp',   label: 'ARP', ids: ['arpLevel', ...secIds('arp')] },
-  { id: 'voice', label: '声',   ids: ['voiceLevel', ...secIds('voice')] },
+  { id: 'drone', label: 'ドローン', ids: ['droneLevel', ...secIds('drone'), 'droneEcho'] },
+  { id: 'noise', label: 'ノイズ', ids: ['noiseLevel', ...secIds('noise'), 'noiseEcho'] },
+  { id: 'res',   label: 'RES', ids: ['resLevel', ...secIds('res'), 'resEcho'] },
+  { id: 'arp',   label: 'ARP', ids: ['arpLevel', ...secIds('arp'), 'arpEcho'] },
+  { id: 'voice', label: '声',   ids: ['voiceLevel', ...secIds('voice'), 'voiceEcho'] },
+  { id: 'flute', label: '笛',   ids: ['fluteLevel', ...secIds('flute'), 'fluteEcho'] },
+  { id: 'bell',  label: '鐘',   ids: ['bellLevel', ...secIds('bell'), 'bellEcho'] },
   { id: 'field', label: '場',   ids: [...secIds('main').filter(i => !LEVELS.includes(i)), ...secIds('tune')] },
-  { id: 'fx',    label: 'FX',   ids: secIds('fx') },
+  { id: 'fx',    label: 'FX',   ids: secIds('fx').filter(i => !/^(drone|noise|res|arp|voice|flute|bell)Echo$/.test(i)) },
   { id: 'lfo',   label: 'LFO',  ids: [...secIds('lfo1'), ...secIds('lfo2')] },
   { id: 'lib',   label: 'プリセット' },
 ];
@@ -334,7 +336,7 @@ function buildFaces() {
     if (!t.ids) continue;
     for (const id of t.ids) {
       const p = BY_ID[id];
-      let label = LEVELS.includes(id) ? '音量' : p.label;
+      let label = LEVELS.includes(id) ? '音量' : /Echo$/.test(id) ? 'エコー送り' : p.label;
       if (p.sec === 'lfo1' || p.sec === 'lfo2') label = p.sec.slice(3) + ' ' + label;
       if (p.type === 'sel') f.appendChild(makeSelect(p, label));
       else { const c = el('div', 'cell'); c.appendChild(makeKnob(p, label)); f.appendChild(c); }
@@ -349,7 +351,7 @@ function buildFaces() {
   const lev = el('div', 'levels');
   for (const [lv, pt] of PARTS) {
     const name = BY_ID[lv].label, part = el('div', 'part'), head = el('div', 'ph'), out = el('span', 'kv');
-    head.appendChild(el('span', 'kl', name)); head.appendChild(out);
+    head.appendChild(el('span', 'kl', name));
     part.appendChild(head);
     part.appendChild(makeFader(BY_ID[lv], name + 'の音量', out));
     part.appendChild(makeKnob(BY_ID[pt], name + 'の高低', false, true));
@@ -363,7 +365,7 @@ function buildFaces() {
     <button id="share">書き出し</button><button id="load">読み込み</button>
     <div class="wide"><label>シード</label><span id="seed" class="val"></span><button id="reseed">振り直す</button></div>
     <div class="wide"><label>マクロ</label><span class="val note">表のパッドと大つまみ</span><button id="zero">中央へ戻す</button></div>
-    <p class="note wide">表の下段は、縦の棒が各部の音量、つまみが高低。つまみは縦に引いて回す。二度叩くと既定値へ戻る。上辺の秒数は「モーフ」、プリセットを切り替える際にかける時間である。自作のプリセットはこの端末に保存される。別の端末へは「書き出し」で渡す。</p>
+    <p class="note wide">表の下段は、縦の棒が各部の音量、つまみが高低。声・笛・鐘の「間」を広く取れば、時おり聞こえるだけの背景になる。つまみは縦に引いて回す。二度叩くと既定値へ戻る。上辺の秒数は「モーフ」、プリセットを切り替える際にかける時間である。自作のプリセットはこの端末に保存される。別の端末へは「書き出し」で渡す。</p>
     <div class="wide"><a href="test.html">消灯再生試験</a></div>`;
 }
 
