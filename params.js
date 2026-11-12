@@ -31,6 +31,7 @@ export const SECTIONS = [
   { id: 'tune',  label: '調律と場' },
   { id: 'drone', label: 'ドローン' },
   { id: 'noise', label: 'ノイズ' },
+  { id: 'noise2', label: 'ノイズ加工' },
   { id: 'res',   label: 'RES' },
   { id: 'arp',   label: 'ARP' },
   { id: 'voice', label: '声' },
@@ -104,6 +105,22 @@ export const PARAMS = [
   { id: 'noiseSwellT', sec: 'noise', label: '波の周期',   type: 'log', min: 2, max: 40, def: 9, unit: 's' },
   { id: 'noiseWidth',  sec: 'noise', label: 'ステレオ幅', type: 'lin', min: 0, max: 1, def: 0.8, unit: '%' },
   { id: 'noiseRes',    sec: 'noise', label: 'RES 送り', type: 'lin', min: 0, max: 1, def: 0.5, unit: '%' },
+  // 素材
+  { id: 'noiseCrackle', sec: 'noise', label: 'パチパチ', type: 'lin', min: 0, max: 1, def: 0, unit: '%' },
+  { id: 'noiseDensity', sec: 'noise', label: '粒の密度', type: 'log', min: 0.5, max: 3000, def: 40, unit: '/s' },
+  { id: 'noiseFlutter', sec: 'noise', label: '荒れ',     type: 'lin', min: 0, max: 1, def: 0, unit: '%' },
+  { id: 'noiseHum',     sec: 'noise', label: 'ハム',     type: 'lin', min: 0, max: 1, def: 0, unit: '%' },
+  { id: 'noiseCrush',   sec: 'noise', label: 'クラッシュ', type: 'lin', min: 0, max: 1, def: 0, unit: '%' },
+  // 加工
+  { id: 'noiseFilt',     sec: 'noise2', label: 'フィルター', type: 'lin', min: 0, max: 1, def: 0, unit: '%' },
+  { id: 'noiseFiltFreq', sec: 'noise2', label: '周波数',     type: 'log', min: 60, max: 8000, def: 800, unit: 'Hz' },
+  { id: 'noiseReso',     sec: 'noise2', label: 'レゾナンス', type: 'lin', min: 0, max: 1, def: 0.7, unit: '%' },
+  { id: 'noiseFiltMode', sec: 'noise2', label: '動き方', type: 'sel', def: 'wander',
+    opts: opts({ fix: '固定', wander: '漂う', scale: '音階', whistler: '降下' }) },
+  { id: 'noiseFiltMove', sec: 'noise2', label: '動きの幅',   type: 'lin', min: 0, max: 1, def: 0.4, unit: '%' },
+  { id: 'noiseFiltRate', sec: 'noise2', label: '動きの速さ', type: 'log', min: 0.02, max: 8, def: 0.3, unit: '/s' },
+  { id: 'noiseFb',       sec: 'noise2', label: 'フィードバック', type: 'lin', min: 0, max: 1, def: 0, unit: '%' },
+  { id: 'noiseDrive',    sec: 'noise2', label: '歪み',       type: 'lin', min: 0, max: 1, def: 0, unit: '%' },
 
   // 共鳴
   { id: 'resDecay',    sec: 'res', label: 'ディケイ', type: 'log', min: 0.2, max: 12, def: 2.5, unit: 's' },
@@ -262,7 +279,7 @@ export function format(p, v) {
     case 's2': return (v >= 1 ? v.toFixed(2) : v.toFixed(3)) + '秒';
     case 's': return (v >= 10 ? v.toFixed(0) : v.toFixed(1)) + '秒';
     case 'cent': return (v > 0 ? '+' : '') + v.toFixed(0) + '¢';
-    case '/s': return (v >= 1 ? v.toFixed(1) : v.toFixed(2)) + '/秒';
+    case '/s': return (v >= 100 ? v.toFixed(0) : v >= 1 ? v.toFixed(1) : v.toFixed(2)) + '/秒';
     case 'oct': return (Number.isInteger(v) ? v : v.toFixed(2)) + 'oct';
     case 'x': return '×' + v.toFixed(2);
     case 'n': return Math.round(v) + '';
@@ -294,6 +311,11 @@ export const FACTORY = [
     p: { droneLevel: 0.3, noiseLevel: 0.7, resLevel: 0.3, voiceLevel: 0.95, voiceCount: '2', voiceBreath: 1,
          voiceCons: 0.6, voiceRate: 3, voiceGap: 0.6, voiceFar: 0.3, voiceRes: 0.1, voiceEcho: 0, noiseColor: 0.6,
          noiseSwell: 0.3, tone: 7000, droneBright: 0.15, droneParts: 5, space: 0.4, spaceDecay: 4 } },
+
+  { cat: '眠り', name: '風穴', seed: 12,
+    p: { droneLevel: 0.4, droneBright: 0.2, noiseLevel: 0.95, noiseColor: 0.6, noiseSwell: 0.6, noiseSwellT: 8, noiseFilt: 0.7,
+         noiseReso: 0.86, noiseFiltMode: 'wander', noiseFiltFreq: 700, noiseFiltMove: 0.5, noiseFiltRate: 0.12,
+         resLevel: 0.25, tone: 6000, space: 0.7, spaceDecay: 8 } },
 
   /* ---- 瞑想：音高と倍音に耳を置くもの ---- */
   { cat: '瞑想', name: '賢者の石', seed: 1972,
@@ -345,6 +367,13 @@ export const FACTORY = [
          bellRate: 0.35, bellGap: 0.55, bellRange: 0.5, bellFar: 0.3, bellPan: 0.8, bellRes: 0.2, bellEcho: 0,
          scale: 'penta', tone: 8000, space: 0.4, spaceDecay: 3 } },
 
+  { cat: '環境', name: '空電', seed: 1901,
+    p: { droneLevel: 0.3, dronePitch: -12, noiseLevel: 0.9, noiseColor: 0.3, noisePitch: 0.2, noiseSwell: 0.2,
+         noiseCrackle: 0.6, noiseDensity: 6, noiseFlutter: 0.55, noiseHum: 0.25, noiseFilt: 0.85, noiseReso: 0.93,
+         noiseFiltMode: 'whistler', noiseFiltFreq: 1500, noiseFiltMove: 0.8, noiseFiltRate: 0.25, noiseEcho: 0.3,
+         echoMix: 0.3, echoTime: 0.6, echoFb: 0.5, resLevel: 0.15, voiceLevel: 0.4, voiceFar: 0.9, voiceGap: 0.85,
+         voiceBreath: 0.3, tone: 9000, space: 0.35 } },
+
   /* ---- 実験：聴くためのもの。眠りには向かない ---- */
   { cat: '実験', name: '電気嵐', seed: 1969,
     p: { droneLevel: 0.6, noiseLevel: 0.4, resLevel: 0.4, arpLevel: 0.45, arpMode: 'gliss', arpDir: 'pend', arpRate: 0.6,
@@ -364,4 +393,8 @@ export const FACTORY = [
          voiceFar: 0.7, voiceGap: 0.5, voiceEcho: 0.7, phaserMix: 0.6, phaserRate: 0.3, echoMix: 0.6, echoTime: 0.27,
          echoFb: 0.8, echoPing: 0.9, echoWow: 0.7, lfo1Target: 'arpCenter', lfo1Shape: 'step', lfo1Rate: 0.4,
          lfo1Depth: 0.7, lfo2Target: 'echoTime', lfo2Shape: 'smooth', lfo2Rate: 0.05, lfo2Depth: 0.3, dub: 0.3, space: 0.4 } },
+  { cat: '実験', name: '帰還', seed: 1958,
+    p: { droneLevel: 0.35, noiseLevel: 0.7, noiseColor: 0.5, noiseSwell: 0.2, noiseFb: 0.97, noiseFiltMode: 'scale',
+         noiseFiltFreq: 160, noiseFiltMove: 0.45, noiseFiltRate: 0.08, noiseDrive: 0.45, noiseHum: 0.4, noiseCrush: 0.15,
+         phaserMix: 0.5, noiseEcho: 0.4, echoMix: 0.4, echoTime: 0.5, echoFb: 0.6, scale: 'pentam', resLevel: 0.3, space: 0.5 } },
 ];

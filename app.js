@@ -304,7 +304,11 @@ const secIds = sec => PARAMS.filter(p => p.sec === sec).map(p => p.id);
 const TABS = [
   { id: 'front', label: '表' },
   { id: 'drone', label: 'ドローン', ids: ['droneLevel', ...secIds('drone'), 'droneEcho'] },
-  { id: 'noise', label: 'ノイズ', ids: ['noiseLevel', ...secIds('noise'), 'noiseEcho'] },
+  { id: 'noise', label: 'ノイズ', pages: [
+    { label: '素材', ids: ['noiseLevel', 'noisePitch', 'noiseColor', 'noiseCrackle', 'noiseDensity', 'noiseFlutter', 'noiseHum',
+      'noiseCrush', 'noiseSwell', 'noiseSwellT', 'noiseWidth', 'noiseRes', 'noiseEcho'] },
+    { label: '加工', ids: secIds('noise2') },
+  ] },
   { id: 'res',   label: 'RES', ids: ['resLevel', ...secIds('res'), 'resEcho'] },
   { id: 'arp',   label: 'ARP', ids: ['arpLevel', ...secIds('arp'), 'arpEcho'] },
   { id: 'voice', label: '声',   ids: ['voiceLevel', ...secIds('voice'), 'voiceEcho'] },
@@ -330,17 +334,28 @@ function buildFaces() {
     const b = el('button', '', t.label);
     b.id = 't_' + t.id; b.onclick = () => showTab(t.id);
     tabs.appendChild(b);
-    const f = el('div', 'face' + (t.ids ? ' grid' : ''));
+    const f = el('div', 'face' + (t.ids ? ' grid' : t.pages ? ' paged' : ''));
     f.id = 'f_' + t.id;
     faces.appendChild(f);
-    if (!t.ids) continue;
-    for (const id of t.ids) {
-      const p = BY_ID[id];
-      let label = LEVELS.includes(id) ? '音量' : /Echo$/.test(id) ? 'エコー送り' : p.label;
-      if (p.sec === 'lfo1' || p.sec === 'lfo2') label = p.sec.slice(3) + ' ' + label;
-      if (p.type === 'sel') f.appendChild(makeSelect(p, label));
-      else { const c = el('div', 'cell'); c.appendChild(makeKnob(p, label)); f.appendChild(c); }
-    }
+    const fill = (box, ids) => {
+      for (const id of ids) {
+        const p = BY_ID[id];
+        let label = LEVELS.includes(id) ? '音量' : /Echo$/.test(id) ? 'エコー送り' : p.label;
+        if (p.sec === 'lfo1' || p.sec === 'lfo2') label = p.sec.slice(3) + ' ' + label;
+        if (p.type === 'sel') box.appendChild(makeSelect(p, label));
+        else { const c = el('div', 'cell'); c.appendChild(makeKnob(p, label)); box.appendChild(c); }
+      }
+    };
+    if (t.ids) fill(f, t.ids);
+    // 一枚に収まらぬ部は頁に分け、末尾の釦でめくる
+    if (t.pages) t.pages.forEach((pg, i) => {
+      const g = el('div', 'grid page' + (i ? '' : ' on')), nx = (i + 1) % t.pages.length;
+      fill(g, pg.ids);
+      const c = el('div', 'cell'), flip = el('button', 'flip', t.pages[nx].label + ' ▸');
+      flip.onclick = () => [...f.children].forEach((x, k) => x.classList.toggle('on', k === nx));
+      c.appendChild(flip); c.appendChild(el('div', 'kl', '頁をめくる'));
+      g.appendChild(c); f.appendChild(g);
+    });
   }
   // 表：XY パッド、大つまみ四つ、各部の音量
   const front = $('f_front'), M = Object.fromEntries(MACROS.map(m => [m.id, m]));

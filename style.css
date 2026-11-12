@@ -88,6 +88,11 @@ h1 { margin:0; font-size:4cqw; font-weight:500; letter-spacing:.08em; color:var(
 .cell select { width:100%; height:6cqw; font-size:2.8cqw; padding:0 0.6cqw; }
 .cell .kl { font-size:2.9cqw; color:var(--fg); }
 
+.face.paged.on { display:block; padding:0; }
+.page { display:none; position:absolute; inset:0; padding:1.6cqw 2cqw; }
+.page.on { display:grid; }
+.flip { width:100%; height:7cqw; color:var(--acc); border-color:var(--acc2); font-size:2.9cqw; }
+
 /* 庫 */
 #f_lib { grid-template-columns:1fr 1fr; grid-auto-rows:min-content; gap:2cqw; align-content:start; padding:3cqw; }
 #f_lib .wide { grid-column:1 / 3; display:flex; align-items:center; gap:2cqw; }

@@ -60,6 +60,34 @@ function mixTo(n, sL, sR, g0, g1, dL, dR, send, wL, wR, e0, e1, eL, eR) {
   }
 }
 
+/* ---------- 音階の上を歩く道具（雑音・笛・鐘が使う） ---------- */
+// 「間」のつまみ → 沈黙の平均秒数（0.25秒〜60秒）
+const gapSec = g => 0.25 * Math.pow(240, g);
+
+// 中心の上下 range オクターブに入る音階の音（log2 Hz）を低い順に並べる
+function ladder(f0, ratios, center, range) {
+  const lc = Math.log2(center), l0 = Math.log2(f0), out = [];
+  let best = l0, bd = 1e9;
+  for (let o = Math.floor(lc - range - l0) - 1; o <= Math.ceil(lc + range - l0) + 1; o++) {
+    for (const r of ratios) {
+      const l = l0 + o + Math.log2(r), d = Math.abs(l - lc);
+      if (d <= range) out.push(l);
+      if (d < bd) { bd = d; best = l; }
+    }
+  }
+  if (!out.length) out.push(best);
+  return out;
+}
+// 梯子の上を一、二段ずつ歩く。端では折り返す
+function walk(rng, idx, len) {
+  if (len < 2) return 0;
+  const r = rng();
+  idx += r < 0.12 ? 0 : (rng() < 0.5 ? -1 : 1) * (r < 0.75 ? 1 : 2);
+  if (idx < 0) idx = Math.min(len - 1, -idx);
+  if (idx >= len) idx = Math.max(0, 2 * (len - 1) - idx);
+  return idx;
+}
+
 /* ---------- 持続音：倍音格子 ---------- */
 class Drone {
   constructor(rng) {
@@ -134,9 +162,10 @@ class Drone {
   }
 }
 
-/* ---------- 雑音：白・桃・茶 ---------- */
+/* ---------- 雑音：乱数の雑音に限らず、空電・ハム・帰還・発振するフィルターまで ---------- */
 // 帯域を移すと痩せる分の埋め合わせ。高域側は耳につくので半ばまで
 const MAKEUP = (pt, c) => Math.pow(10, pt * pt * (pt < 0 ? 12 - 6 * c : 5 + 8 * c) / 20);
+const CN = 4096;      // 帰還路の遅延線の長さ
 class Noise {
   constructor(rng) {
     this.rng = rng;
@@ -146,25 +175,92 @@ class Noise {
     this.gL = 0; this.gR = 0; this.gE = 0;
     this.fs = [new Float64Array(4), new Float64Array(4)];     // 帯域を移す濾波の状態
     this.buf = [new Float32Array(128), new Float32Array(128)];
+    this.sg = new Float32Array(128);
+    // 素材
+    this.ck = [0, 0];                                  // パチパチの尾
+    this.spT = 1; this.spV = 1; this.spLeft = 0;        // 荒れ（不規則な噴き）
+    this.humPh = 0;
+    this.crCnt = [0, 0]; this.crHold = [0, 0];
+    // 加工
+    this.comb = [new Float32Array(CN), new Float32Array(CN)]; this.cw = 0; this.clp = [0, 0];
+    this.sv = [new Float64Array(2), new Float64Array(2)]; this.vp = [0, 0];     // 共振フィルターの状態
+    this.lf = Math.log2(800); this.tlf = this.lf; this.fw = new Wander(rng);
+    this.stepLeft = 0; this.idx = -1;
+    this.whT = 0; this.whDur = 1; this.whLeft = 0; this.whGate = 0;
+    this.mix = 0; this.fbg = 0;
   }
-  render(P, n, tL, tR, excN) {
-    if (this.buf[0].length < n) this.buf = [new Float32Array(n), new Float32Array(n)];
+  // 共振フィルター（と帰還路）の周波数を、選ばれた動き方で進める
+  moveFilter(P, S, f0, ratios, dt) {
+    const rng = this.rng, c = Math.log2(P.noiseFiltFreq), span = P.noiseFiltMove * 2, mode = S.noiseFiltMode;
+    let gate = 1;
+    if (mode === 'wander') this.tlf = c + span * this.fw.step(dt, P.noiseFiltRate);
+    else if (mode === 'scale') {
+      this.stepLeft -= dt * P.noiseFiltRate;
+      if (this.stepLeft <= 0) {
+        this.stepLeft += 0.6 + 0.8 * rng();
+        const lad = ladder(f0, ratios, P.noiseFiltFreq, span);
+        if (this.idx < 0 || this.idx >= lad.length) this.idx = Math.floor(rng() * lad.length);
+        this.idx = walk(rng, this.idx, lad.length);
+        this.tlf = lad[this.idx];
+      }
+    } else if (mode === 'whistler') {            // 高みから降りてくる口笛。空電の一種
+      if (this.whLeft > 0) {
+        this.whLeft -= dt;
+        const u = clamp(1 - this.whLeft / this.whDur, 0, 1);
+        this.tlf = c + span * (1 - 2 * Math.sqrt(u));
+        gate = Math.sin(Math.PI * u);
+      } else {
+        gate = 0;
+        this.whT -= dt * P.noiseFiltRate;
+        if (this.whT <= 0) {
+          this.whT = 0.3 + 1.5 * rng(); this.whDur = this.whLeft = 0.5 + 1.6 * rng();
+          this.lf = this.tlf = c + span;
+        }
+      }
+    } else this.tlf = c;
+    this.lf += (this.tlf - this.lf) * (1 - Math.exp(-dt / (mode === 'scale' ? 0.03 : 0.015)));
+    this.whGate += (gate - this.whGate) * (1 - Math.exp(-dt / 0.05));
+    return clamp(Math.pow(2, this.lf), 30, Math.min(12000, SR * 0.4));
+  }
+  render(P, S, f0, ratios, n, tL, tR, excN) {
+    if (this.buf[0].length < n) { this.buf = [new Float32Array(n), new Float32Array(n)]; this.sg = new Float32Array(n); }
+    const rng = this.rng, dt = n / SR;
     const c = P.noiseColor;
     let wW = 0, wP = 0, wB = 0;
     if (c < 0.5) { wW = Math.cos(c * Math.PI); wP = Math.sin(c * Math.PI); }
     else { wP = Math.cos((c - 0.5) * Math.PI); wB = Math.sin((c - 0.5) * Math.PI); }
     wW *= 0.35; wP *= 0.118; wB *= 2.3;       // 三色の実効値を揃える係数
-    // 高低：負なら高域を削り、正なら低域を削る（いずれも 12dB/oct）
-    const pt = P.noisePitch;
-    const kl = 1 - Math.exp(-2 * Math.PI * (pt < 0 ? 20000 * Math.pow(0.006, -pt) : 20000) / SR);
-    const kh = 1 - Math.exp(-2 * Math.PI * (pt > 0 ? 20 * Math.pow(250, pt) : 20) / SR);
-    const mk = MAKEUP(pt, c);
+
+    // 荒れ：不規則な間隔で、音量が跳ね、沈む。左右共通
+    const fl = P.noiseFlutter, sg = this.sg;
+    if (fl > 0.002) {
+      let v = this.spV, t = this.spT, left = this.spLeft;
+      const ks = 1 - Math.exp(-1 / (0.004 * SR));
+      for (let k = 0; k < n; k++) {
+        if (--left <= 0) {
+          left = -Math.log(1 - rng() * 0.999) * SR / (8 + 50 * fl);
+          const u = rng();
+          t = u * u * u * 2.8;
+        }
+        v += (t - v) * ks;
+        sg[k] = 1 - fl + fl * v;
+      }
+      this.spV = v; this.spT = t; this.spLeft = left;
+    }
+    // ハム：電源由来の低い唸り（50Hz とその奇数倍）
+    const hum = P.noiseHum * P.noiseHum * 0.22;
+    let hp = this.humPh;
+    const hinc = 50 / SR;
+    // パチパチ：疎らな衝撃
+    const crk = P.noiseCrackle * P.noiseCrackle * 1.8 * Math.min(1, Math.pow(150 / P.noiseDensity, 0.3)), pd = P.noiseDensity / SR;
+    // クラッシュ：標本化を粗くする
+    const crN = 1 + Math.floor(P.noiseCrush * P.noiseCrush * 60);
+
     for (let ch = 0; ch < 2; ch++) {
       const b = this.b[ch], o = this.buf[ch];
-      let br = this.br[ch];
-      const fs = this.fs[ch];
-      let l1 = fs[0], l2 = fs[1], h1 = fs[2], h2 = fs[3];
+      let br = this.br[ch], ck = this.ck[ch];
       let b0 = b[0], b1 = b[1], b2 = b[2], b3 = b[3], b4 = b[4], b5 = b[5], b6 = b[6];
+      let ph = this.humPh;
       for (let k = 0; k < n; k++) {
         const w = white();
         b0 = 0.99886 * b0 + w * 0.0555179; b1 = 0.99332 * b1 + w * 0.0750759;
@@ -174,14 +270,100 @@ class Noise {
         b6 = w * 0.115926;
         br = (br + 0.02 * w) / 1.02;
         let y = w * wW + pink * wP + br * wB;
+        if (fl > 0.002) y *= sg[k];
+        if (crk > 1e-4) {
+          const u = white();
+          ck *= 0.55;
+          if (u > 0 && u < pd) ck += (white() > 0 ? 1 : -1) * (0.3 + 0.7 * u / pd);
+          y += ck * crk;
+        }
+        if (hum > 1e-5) {
+          ph += hinc; if (ph >= 1) ph -= 1;
+          const x = ph * TS, j = x | 0, s1 = SIN[j];
+          y += hum * (s1 + 0.5 * SIN[(j * 3) & (TS - 1)] + 0.33 * SIN[(j * 5) & (TS - 1)] + 0.2 * SIN[(j * 7) & (TS - 1)]);
+        }
+        o[k] = y;
+      }
+      hp = ph;
+      b[0] = b0; b[1] = b1; b[2] = b2; b[3] = b3; b[4] = b4; b[5] = b5; b[6] = b6;
+      this.br[ch] = br; this.ck[ch] = ck;
+      if (crN > 1) {
+        let cnt = this.crCnt[ch], hold = this.crHold[ch];
+        for (let k = 0; k < n; k++) { if (++cnt >= crN) { cnt = 0; hold = o[k]; } o[k] = hold; }
+        this.crCnt[ch] = cnt; this.crHold[ch] = hold;
+      }
+    }
+    this.humPh = hp;
+
+    // 加工：帰還路 → 共振フィルター → 歪み
+    const mix1 = P.noiseFilt, fb1 = P.noiseFb * 1.04;
+    const active = mix1 > 0.002 || this.mix > 0.002 || fb1 > 0.002 || this.fbg > 0.002;
+    if (active) {
+      const f = this.moveFilter(P, S, f0, ratios, dt);
+      const r = P.noiseReso;
+      const kq = 2 * Math.pow(1 - r, 2.5) - 0.03 * Math.pow(r, 12);       // 0 を割れば自ら発振する
+      const g = Math.tan(Math.PI * f / SR);
+      // 鋭くするほど入力を絞り、雑音を通したときの音量を保つ
+      const inG = Math.sqrt(Math.max(kq, 0.002) / 2) * 3.3;
+      const nrm = 0.9 * this.whGate;
+      const cut = S.noiseFiltMode === 'whistler' ? 0.25 : 1;     // 降下では、地の雑音を残したまま口笛を重ねる
+      const D = clamp(SR / f, 2, CN - 2);
+      const klp = 1 - Math.exp(-2 * Math.PI * 5000 / SR);
+      const dm = (mix1 - this.mix) / n, df = (fb1 - this.fbg) / n;
+      const w0 = this.cw;
+      for (let ch = 0; ch < 2; ch++) {
+        const o = this.buf[ch], cb = this.comb[ch], sv = this.sv[ch];
+        let w = w0, clp = this.clp[ch], ic1 = sv[0], ic2 = sv[1], m = this.mix, fb = this.fbg, vp = this.vp[ch];
+        for (let k = 0; k < n; k++) {
+          m += dm; fb += df;
+          let x = o[k];
+          // 帰還路：フィルターの音高に合わせた遅延。帰還が 1 を超えるとハウリングになる
+          let pos = w - D; if (pos < 0) pos += CN;
+          if (pos >= CN) pos = 0;                  // 丸めで端に乗ることがある
+          const i = pos | 0, j = i + 1 >= CN ? 0 : i + 1;
+          const d = cb[i] + (cb[j] - cb[i]) * (pos - i);
+          clp += (d - clp) * klp;
+          x = x * (1 - 0.4 * fb) + Math.tanh(clp) * fb;
+          cb[w] = x + 1e-20; if (++w >= CN) w = 0;
+          // 共振フィルター（帯域通過）
+          // 振れが大きいほど減衰を増す。発振は一定の振幅で釣り合い、暴走しない
+          const ke = kq + 0.25 * vp * vp;
+          const a1 = 1 / (1 + g * (g + ke)), a2 = g * a1, a3 = g * a2;
+          const v3 = x * inG - ic2, v1 = a1 * ic1 + a2 * v3, v2 = ic2 + a2 * ic1 + a3 * v3;
+          ic1 = v1 + v1 - ic1; ic2 = v2 + v2 - ic2;
+          if (ic1 > 8) ic1 = 8; else if (ic1 < -8) ic1 = -8;
+          if (ic2 > 8) ic2 = 8; else if (ic2 < -8) ic2 = -8;
+          vp = v1;
+          o[k] = x * (1 - m * cut) + v1 * nrm * m;
+        }
+        this.clp[ch] = clp; sv[0] = ic1; sv[1] = ic2; this.vp[ch] = vp;
+        if (ch) this.cw = w;
+      }
+      this.mix = mix1; this.fbg = fb1;
+    }
+    const drv = P.noiseDrive;
+    if (drv > 0.002) {
+      const pre = 1 + drv * drv * 40, post = 0.5 / Math.tanh(0.5 * pre) * (1 - 0.35 * drv);
+      for (let ch = 0; ch < 2; ch++) { const o = this.buf[ch]; for (let k = 0; k < n; k++) o[k] = Math.tanh(o[k] * pre) * post; }
+    }
+
+    // 高低：負なら高域を削り、正なら低域を削る（いずれも 12dB/oct）
+    const pt = P.noisePitch;
+    const kl = 1 - Math.exp(-2 * Math.PI * (pt < 0 ? 20000 * Math.pow(0.006, -pt) : 20000) / SR);
+    const kh = 1 - Math.exp(-2 * Math.PI * (pt > 0 ? 20 * Math.pow(250, pt) : 20) / SR);
+    const mk = MAKEUP(pt, c);
+    for (let ch = 0; ch < 2; ch++) {
+      const o = this.buf[ch], fs = this.fs[ch];
+      let l1 = fs[0], l2 = fs[1], h1 = fs[2], h2 = fs[3];
+      for (let k = 0; k < n; k++) {
+        let y = o[k];
         l1 += (y - l1) * kl; l2 += (l1 - l2) * kl; y = l2;
         h1 += (y - h1) * kh; y -= h1; h2 += (y - h2) * kh; y -= h2;
         o[k] = y * mk;
       }
       fs[0] = l1; fs[1] = l2; fs[2] = h1; fs[3] = h2;
-      b[0] = b0; b[1] = b1; b[2] = b2; b[3] = b3; b[4] = b4; b[5] = b5; b[6] = b6;
-      this.br[ch] = br;
     }
+
     // 寄せては返す音量の波
     this.swPh += n / SR / P.noiseSwellT * this.swVar;
     if (this.swPh >= 1) { this.swPh -= 1; this.swVar = 0.75 + this.rng() * 0.5; }
@@ -666,34 +848,6 @@ class Reverb {
   }
 }
 
-/* ---------- 笛と鐘に共通の道具 ---------- */
-// 「間」のつまみ → 沈黙の平均秒数（0.25秒〜60秒）
-const gapSec = g => 0.25 * Math.pow(240, g);
-
-// 中心の上下 range オクターブに入る音階の音（log2 Hz）を低い順に並べる
-function ladder(f0, ratios, center, range) {
-  const lc = Math.log2(center), l0 = Math.log2(f0), out = [];
-  let best = l0, bd = 1e9;
-  for (let o = Math.floor(lc - range - l0) - 1; o <= Math.ceil(lc + range - l0) + 1; o++) {
-    for (const r of ratios) {
-      const l = l0 + o + Math.log2(r), d = Math.abs(l - lc);
-      if (d <= range) out.push(l);
-      if (d < bd) { bd = d; best = l; }
-    }
-  }
-  if (!out.length) out.push(best);
-  return out;
-}
-// 梯子の上を一、二段ずつ歩く。端では折り返す
-function walk(rng, idx, len) {
-  if (len < 2) return 0;
-  const r = rng();
-  idx += r < 0.12 ? 0 : (rng() < 0.5 ? -1 : 1) * (r < 0.75 ? 1 : 2);
-  if (idx < 0) idx = Math.min(len - 1, -idx);
-  if (idx >= len) idx = Math.max(0, 2 * (len - 1) - idx);
-  return idx;
-}
-
 /* ---------- 笛：か細い息の笛から、霧の向こうの警笛まで ---------- */
 class Flute {
   constructor(rng) {
@@ -926,6 +1080,7 @@ class Echo {
       fph += 6.3 / SR; if (fph >= 1) fph -= 1;
       const md = d * (1 + wow * (0.004 * SIN[(wph * TS) | 0] + 0.0007 * SIN[(fph * TS) | 0]));
       let pos = w - md; if (pos < 0) pos += N;
+      if (pos >= N) pos = 0;                      // 丸めで端に乗ることがある
       const i = pos | 0, fr = pos - i, j = i + 1 >= N ? 0 : i + 1;
       let yl = bL[i] + (bL[j] - bL[i]) * fr, yr = bR[i] + (bR[j] - bR[i]) * fr;
       lpL += (yl - lpL) * kl; hpL += (lpL - hpL) * kh; yl = lpL - hpL;
@@ -1130,7 +1285,7 @@ class FoolsIron extends AudioWorkletProcessor {
     t = P.noiseLevel * P.noiseLevel * dub.mute[1]; e = P.noiseEcho * P.noiseEcho + dub.thr[1];
     if (t > 1e-6 || g.noise > 1e-6 || (P.noiseRes > 0.001 && P.resLevel > 0.001)) {
       tL.fill(0); tR.fill(0);
-      this.noise.render(P, n, tL, tR, eN);
+      this.noise.render(P, S, f0, ratios, n, tL, tR, eN);
       this.phN.process(P, n, tL, tR);
       mixTo(n, tL, tR, g.noise, t, dL, dR, 0.12, wL, wR, es[1], e, xL, xR);
     }
