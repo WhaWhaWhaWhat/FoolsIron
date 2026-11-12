@@ -768,23 +768,16 @@ class Flute {
   }
 }
 
-/* ---------- 鐘：風鈴から、遠い寺の鐘まで ---------- */
-const BELL_R = [
-  [1, 2.756, 5.404, 8.933, 13.34, 18.64, 24.8],        // 棒・風鈴
-  [0.5, 1, 1.183, 1.506, 2, 2.514, 3.011],             // 洋鐘
-  [1, 1.48, 2.02, 2.74, 3.0, 3.76, 4.07],              // 梵鐘・銅鑼寄り
-];
-const BELL_A = [
-  [1, 0.6, 0.35, 0.2, 0.12, 0.07, 0.04],
-  [0.5, 1, 0.7, 0.5, 0.6, 0.3, 0.25],
-  [1, 0.7, 0.6, 0.45, 0.4, 0.3, 0.25],
-];
-const BP = 10;       // 一打あたりの正弦の数：部分音七つ＋低い三つの唸り相手
+/* ---------- 鐘：FM 合成。打った瞬間に濁り、次第に澄む ---------- */
+// 材質のつまみが渡る、変調と搬送の周波数比。整数から外れた比が金属の響きを生む
+const BELL_M = [3.53, 2.76, 1.41, 0.71];        // チャイム → 鉄琴 → 洋鐘 → 銅鑼・梵鐘寄り
+const BO = 3;        // 一打あたりの FM の組：胴二つ（隣り合う材質を混ぜる）＋打撃音一つ
 class Bell {
   constructor(rng) {
     this.rng = rng; this.q = []; this.left = Math.floor((1 + rng() * 4) * SR); this.idx = -1; this.pan = 0;
     this.v = [];
-    for (let i = 0; i < 6; i++) this.v.push({ on: false, inc: new Float64Array(BP), ph: new Float64Array(BP), env: new Float64Array(BP), dec: new Float64Array(BP) });
+    const f = () => new Float64Array(BO);
+    for (let i = 0; i < 6; i++) this.v.push({ on: false, pc: f(), pm: f(), ic: f(), im: f(), ix: f(), dx: f(), is: f(), am: f(), da: f() });
     this.m = new Float32Array(128); this.fl = [0, 0, 0, 0]; this.gE = 0;
   }
   build(P, f0, ratios) {
@@ -800,29 +793,30 @@ class Bell {
   }
   strike(P, lp, vel) {
     let v = this.v.find(x => !x.on);
-    if (!v) { v = this.v[0]; for (const x of this.v) if (x.env[0] + x.env[1] < v.env[0] + v.env[1]) v = x; }
-    const rng = this.rng, hard = P.bellHard;
-    const x = Math.min(P.bellTimbre * 2, 1.9999), si = x | 0, fr = x - si;
-    const f = Math.pow(2, lp);
-    let sumsq = 0, rmin = 1e9;
-    const rat = [], amp = [];
-    for (let i = 0; i < 7; i++) {
-      rat.push(Math.pow(2, Math.log2(BELL_R[si][i]) * (1 - fr) + Math.log2(BELL_R[si + 1][i]) * fr));
-      amp.push((BELL_A[si][i] * (1 - fr) + BELL_A[si + 1][i] * fr) * Math.pow(i + 1, -1.6 * (1 - hard)));
-      rmin = Math.min(rmin, rat[i]);
+    if (!v) { v = this.v[0]; for (const x of this.v) if (x.am[0] + x.am[1] < v.am[0] + v.am[1]) v = x; }
+    const rng = this.rng, hard = P.bellHard, beat = P.bellBeat;
+    const x = Math.min(P.bellTimbre * 3, 2.9999), si = x | 0, fr = x - si;
+    const f = Math.pow(2, lp), dec = P.bellDecay;
+    const idx0 = (1 + 8 * Math.pow(hard, 1.5)) * (0.75 + 0.25 * vel);
+    // [搬送の比, 変調の比（搬送に対して）, 音量, 余韻, 変調の深さ, 深さの余韻]
+    const ops = [
+      [1, BELL_M[si], Math.cos(fr * Math.PI / 2), dec, idx0, dec * 0.3],
+      [1 + beat * 0.0025 * (0.5 + rng()), BELL_M[si + 1], Math.sin(fr * Math.PI / 2), dec, idx0, dec * 0.3],
+      [2.99, 1.41, 0.2 + 0.5 * hard, Math.min(0.7, dec * 0.12) + 0.05, idx0 * 1.3 + 1, 0.12],     // 打撃の濁り。すぐ消える
+    ];
+    for (let i = 0; i < BO; i++) {
+      const [cr, mr, lv, t60, ix, tix] = ops[i];
+      const fc = f * cr, fm = fc * mr * (1 + beat * 0.003 * (rng() - 0.5));
+      // 折り返し雑音を避けるため、高い音では変調を浅くする
+      const imax = Math.max(0, (SR * 0.42 - fc) / fm - 1);
+      const I = Math.min(ix, imax);
+      v.ic[i] = fc / SR; v.im[i] = fm / SR; v.pc[i] = 0; v.pm[i] = 0;
+      v.ix[i] = I * 0.85 / (2 * Math.PI); v.is[i] = I * 0.15 / (2 * Math.PI);      // 一部は消えずに残り、余韻にも金属味を保つ
+      v.dx[i] = Math.exp(-LN1000 / (clamp(tix, 0.03, 60) * SR));
+      v.am[i] = fc < SR * 0.42 ? lv * 0.4 * vel : 0;
+      v.da[i] = Math.exp(-LN1000 / (clamp(t60, 0.05, 60) * SR));
     }
-    for (let i = 0; i < BP; i++) {
-      const src = i < 7 ? i : i - 7, pair = src < 3;
-      let fq = f * rat[src];
-      if (i >= 7) fq *= 1 + P.bellBeat * 0.006 * (0.5 + rng());       // 唸りの相手
-      const a = fq < SR * 0.45 ? amp[src] * (i >= 7 ? 0.4 : pair ? 0.75 : 1) : 0;    // 唸りは浅く。完全には打ち消さない
-      v.inc[i] = fq / SR; v.ph[i] = rng(); v.env[i] = a;
-      v.dec[i] = Math.exp(-LN1000 / (clamp(P.bellDecay / Math.pow(rat[src] / rmin, 0.75), 0.05, 60) * SR));
-      sumsq += a * a;
-    }
-    const nrm = 0.28 * vel / Math.sqrt(sumsq || 1);
-    for (let i = 0; i < BP; i++) v.env[i] *= nrm;
-    v.on = true; v.attLen = Math.round((0.002 + (1 - hard) * 0.03) * SR); v.att = 0;
+    v.on = true; v.attLen = Math.round((0.001 + (1 - hard) * 0.012) * SR); v.att = 0;
     v.gl = panL(this.pan + (rng() - 0.5) * 0.3 * P.bellPan); v.gr = panR(this.pan + (rng() - 0.5) * 0.3 * P.bellPan);
   }
   render(P, f0, ratios, n, tL, tR, excT) {
@@ -841,18 +835,23 @@ class Bell {
       if (!v.on) continue;
       m.fill(0, 0, n);
       let alive = false;
-      for (let i = 0; i < BP; i++) {
-        let e = v.env[i];
-        if (e < 2e-5) continue;
+      for (let i = 0; i < BO; i++) {
+        let a = v.am[i];
+        if (a < 2e-5) continue;
         alive = true;
-        const inc = v.inc[i], dec = v.dec[i];
-        let p = v.ph[i];
+        const ic = v.ic[i], im = v.im[i], da = v.da[i], dx = v.dx[i], is = v.is[i];
+        let pc = v.pc[i], pm = v.pm[i], ix = v.ix[i];
         for (let k = 0; k < n; k++) {
-          const x = p * TS, j = x | 0;
-          m[k] += (SIN[j] + (SIN[j + 1] - SIN[j]) * (x - j)) * e;
-          e *= dec; p += inc; if (p >= 1) p -= 1;
+          let x = pm * TS, j = x | 0;
+          const sm = SIN[j] + (SIN[j + 1] - SIN[j]) * (x - j);
+          let q = pc + (ix + is) * sm; q -= Math.floor(q);
+          x = q * TS; j = x | 0;
+          m[k] += (SIN[j] + (SIN[j + 1] - SIN[j]) * (x - j)) * a;
+          a *= da; ix *= dx;
+          pc += ic; if (pc >= 1) pc -= 1;
+          pm += im; if (pm >= 1) pm -= 1;
         }
-        v.env[i] = e; v.ph[i] = p;
+        v.am[i] = a; v.ix[i] = ix; v.pc[i] = pc; v.pm[i] = pm;
       }
       if (!alive) { v.on = false; continue; }
       for (let k = 0; k < n; k++) {
