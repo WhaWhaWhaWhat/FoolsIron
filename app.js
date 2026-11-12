@@ -1,5 +1,5 @@
 // FoolsIron 操作面：画面の組み立て、プリセット、タイマー、発音部との受け渡し
-import { PARAMS, MACROS, FACTORY, BY_ID, norm, denorm, defaults, sanitize, format } from './params.js';
+import { PARAMS, MACROS, FACTORY, CATS, BY_ID, norm, denorm, defaults, sanitize, format } from './params.js';
 
 const $ = id => document.getElementById(id);
 const KEY = { state: 'foolsiron.state', presets: 'foolsiron.presets', settings: 'foolsiron.settings' };
@@ -389,9 +389,11 @@ function showHead() {
   const sel = $('preset');
   sel.textContent = '';
   if (state.src === 'x') sel.add(new Option(state.name + '（未保存）', 'x'));
-  const g1 = document.createElement('optgroup'); g1.label = '内蔵';
-  FACTORY.forEach((p, i) => g1.appendChild(new Option(p.name, 'f:' + i)));
-  sel.appendChild(g1);
+  for (const cat of CATS) {
+    const g = document.createElement('optgroup'); g.label = cat;
+    FACTORY.forEach((p, i) => { if (p.cat === cat) g.appendChild(new Option(p.name, 'f:' + i)); });
+    sel.appendChild(g);
+  }
   if (user.length) {
     const g2 = document.createElement('optgroup'); g2.label = '自作';
     user.forEach((p, i) => g2.appendChild(new Option(p.name, 'u:' + i)));
