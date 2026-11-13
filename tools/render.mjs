@@ -25,7 +25,9 @@ export function render(values, seed, secs, hook) {
   ['ドローン', 'ノイズ', 'RES', 'ARP', '声', '笛', '鐘'].forEach((nm, i) => {
     if (mt.nAct[i]) parts[nm] = { on: +db(mt.act[i] / mt.nAct[i]).toFixed(1), duty: +(mt.nAct[i] / mt.blocks).toFixed(2) };
   });
-  return { L, R, parts, speed: secs / ((performance.now() - t0) / 1000) };
+  // 抑え：平均と最大で何 dB 下げたか
+  const lim = { avg: +(-20 * Math.log10(mt.gr / Math.max(1, mt.grN))).toFixed(1), max: +(-20 * Math.log10(mt.grMin)).toFixed(1) };
+  return { L, R, parts, lim, speed: secs / ((performance.now() - t0) / 1000) };
 }
 export function stats(L, R, from = 0) {
   let s = 0, pk = 0, bad = 0, c = 0, sl = 0, sr = 0;

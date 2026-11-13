@@ -16,7 +16,7 @@ for (const f of FACTORY) {
   const rule = mains >= 2 ? `主役 ${mains} 本` : flat ? '横並び' : '★主役が一本きり';
   const r = render(v, f.seed, 200), s = stats(r.L, r.R, SR * 5);
   lo = Math.min(lo, +s.rms); hi = Math.max(hi, +s.rms);
-  console.log(`${f.cat} ${f.name}`.padEnd(11), `全体 ${s.rms} 尖 ${s.peak}${s.bad ? ' 無効' + s.bad : ''} | ${rule} |`,
+  console.log(`${f.cat} ${f.name}`.padEnd(11), `全体 ${s.rms} 尖 ${s.peak} 抑え ${r.lim.avg}/${r.lim.max}${s.bad ? ' 無効' + s.bad : ''} | ${rule} |`,
     fad.map(([nm, x]) => `${nm} ${Math.round(x * 100)}${r.parts[nm] ? '(' + r.parts[nm].on.toFixed(0) + ')' : '(鳴らず)'}`).join('  '));
 }
 console.log(`全体の音量の幅 ${lo}〜${hi} dB`);

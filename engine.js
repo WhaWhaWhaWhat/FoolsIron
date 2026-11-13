@@ -1435,6 +1435,13 @@ class Dub {
   }
 }
 
+/* ---------- 出口 ---------- */
+// 出口の音量。主役を二本立てた種で、全体が -8dB 前後になる値
+const OUT_GAIN = 2.2;
+// 抑え：これを越える尖りが来る 2 ミリ秒前から音量を下げ始め、過ぎればゆっくり戻す
+const LIM_T = 0.84, LIM_D = Math.round(SR * 0.002);
+const LIM_KA = 1 - Math.exp(-1 / (LIM_D / 4)), LIM_KR = 1 - Math.exp(-1 / (0.25 * SR));
+
 /* ---------- 処理器本体 ---------- */
 class FoolsIron extends AudioWorkletProcessor {
   constructor() {
@@ -1464,6 +1471,7 @@ class FoolsIron extends AudioWorkletProcessor {
     this.bq = [0, 0, 0, 0, 0, 0, 0, 0];     // 主低域通過の状態 (x1,x2,y1,y2)×2
     this.dc = [0, 0, 0, 0];
     this.sw = 1;
+    this.lbL = new Float32Array(LIM_D); this.lbR = new Float32Array(LIM_D); this.li = 0; this.lg = 1; this.lt = 1; this.lh = 0;
     this.mt = null;          // 開発用の計器。各部の音量を個別に測る（tools/render.mjs が使う）
     this.seed(1);
     this.port.onmessage = e => this.onMsg(e.data);
@@ -1490,7 +1498,7 @@ class FoolsIron extends AudioWorkletProcessor {
   }
   onMsg(m) {
     if (m.type === 'seed') this.seed(m.seed);
-    if (m.type === 'meter') this.mt = { st: new Float64Array(NP * 2), sum: new Float64Array(NP), act: new Float64Array(NP), nAct: new Float64Array(NP), blocks: 0 };
+    if (m.type === 'meter') this.mt = { st: new Float64Array(NP * 2), sum: new Float64Array(NP), act: new Float64Array(NP), nAct: new Float64Array(NP), blocks: 0, gr: 0, grMin: 1, grN: 0 };
     if (m.values) {
       const glide = Math.max(0.03, m.glide || 0.06), blocks = glide * SR / 128;
       for (const [id, v] of Object.entries(m.values)) {
@@ -1647,14 +1655,15 @@ class FoolsIron extends AudioWorkletProcessor {
     this.reverb.process(P, n, wL, wR, dL, dR, g.wet, t);
     g.wet = t;
 
-    // 主部：広がり → 低域除去（ダブの掃引） → 低域通過 → 直流除去 → 柔らかい頭打ち
+    // 主部：広がり → 低域除去（ダブの掃引） → 低域通過 → 直流除去 → 出口の音量 → 抑え
     const fc = Math.min(P.tone, SR * 0.45), w0 = 2 * Math.PI * fc / SR;
     const al = Math.sin(w0) / 1.41421356, cs = Math.cos(w0), a0 = 1 + al;
     const b0 = (1 - cs) / 2 / a0, b1 = (1 - cs) / a0, a1 = -2 * cs / a0, a2 = (1 - al) / a0;
     const bq = this.bq, dc = this.dc, mhp = this.mhp;
     const kh = 1 - Math.exp(-2 * Math.PI * 20 * Math.pow(90, dub.hp) / SR);
     const sw1 = P.width * 2, dsw = (sw1 - this.sw) / n;
-    let sw = this.sw;
+    let sw = this.sw, yl = 0, yr = 0, lmG = this.lg, lmT = this.lt, lmH = this.lh, lmI = this.li;
+    const lbL = this.lbL, lbR = this.lbR, mt = this.mt;
     for (let k = 0; k < n; k++) {
       sw += dsw;
       const mid = (dL[k] + dR[k]) * 0.5, side = (dL[k] - dR[k]) * 0.5 * sw;
@@ -1667,12 +1676,23 @@ class FoolsIron extends AudioWorkletProcessor {
         bq[o + 1] = bq[o]; bq[o] = x; bq[o + 3] = bq[o + 2]; bq[o + 2] = y;
         const d = y - dc[ch * 2] + 0.9975 * dc[ch * 2 + 1];
         dc[ch * 2] = y; dc[ch * 2 + 1] = d;
-        y = d * 0.75;
-        const ay = y < 0 ? -y : y;
-        if (ay > 0.6) { const u = Math.tanh((ay - 0.6) / 0.38) * 0.38 + 0.6; y = y < 0 ? -u : u; }
-        if (ch) oR[k] = y; else oL[k] = y;
+        if (ch) yr = d * OUT_GAIN; else yl = d * OUT_GAIN;
       }
+      // 抑え：先読みつきのリミッター。波形を潰さず、音量そのものを一時的に下げる。左右は同じ量だけ下げる
+      const al2 = yl < 0 ? -yl : yl, ar = yr < 0 ? -yr : yr, pk = al2 > ar ? al2 : ar;
+      const need = pk > LIM_T ? LIM_T / pk : 1;
+      if (need <= lmT) { lmT = need; lmH = LIM_D; }               // より深い抑えが要る：先読みの間は保つ
+      else if (--lmH <= 0) { lmT = need; lmH = need < 1 ? LIM_D : 0; }
+      lmG += (lmT - lmG) * (lmT < lmG ? LIM_KA : LIM_KR);
+      let ol = lbL[lmI] * lmG, or = lbR[lmI] * lmG;
+      lbL[lmI] = yl; lbR[lmI] = yr; if (++lmI >= LIM_D) lmI = 0;
+      // 取りこぼした尖りだけを、最後に柔らかく丸める
+      if (ol > 0.92) ol = 0.92 + Math.tanh((ol - 0.92) / 0.07) * 0.07; else if (ol < -0.92) ol = -0.92 - Math.tanh((-ol - 0.92) / 0.07) * 0.07;
+      if (or > 0.92) or = 0.92 + Math.tanh((or - 0.92) / 0.07) * 0.07; else if (or < -0.92) or = -0.92 - Math.tanh((-or - 0.92) / 0.07) * 0.07;
+      oL[k] = ol; oR[k] = or;
+      if (mt) { mt.gr += lmG; if (lmG < mt.grMin) mt.grMin = lmG; mt.grN++; }
     }
+    this.lg = lmG; this.lt = lmT; this.lh = lmH; this.li = lmI;
     this.sw = sw1;
     return true;
   }

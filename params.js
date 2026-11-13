@@ -310,7 +310,7 @@ export const CATS = ['眠り', '瞑想', '環境', '実験'];
 export const FACTORY = [
   /* ---- 眠り：刺激の少ないもの。ダブは使わない ---- */
   { cat: '眠り', name: '薄明', seed: 7,                          // 利用者の一枚
-    p: { mxLight: -0.37, mxMotion: -0.29, droneLevel: 0.2886, noiseLevel: 0.3314, resLevel: 0.4514, voiceLevel: 0.2972,
+    p: { mxLight: -0.37, mxMotion: -0.29, droneLevel: 0.61, noiseLevel: 0.7, resLevel: 0.95, voiceLevel: 0.62,
          root: 2, tone: 864.7, space: 0.65, scale: 'pentam', spaceDecay: 8, dronePitch: 10, droneBright: 0.3, droneBeat: 3.375,
          subLevel: 0.7976, noisePitch: 0.8047, resDecay: 10.2, resPitch: -14, arpRate: 0.7, arpGate: 2.2, arpSoft: 0.7,
          arpCenter: 137.6, arpWidth: 1.6, arpRes: 0.45, voiceCount: '3', voicePitch: 104.3, voiceGap: 1, voiceBreath: 0.6829,
@@ -322,20 +322,20 @@ export const FACTORY = [
   { cat: '眠り', name: '風穴', seed: 12,                         // 風と、風が鳴らす共鳴
     p: { noiseLevel: 0.85, resLevel: 0.7, droneLevel: 0.5, noiseColor: 0.6, noiseSwell: 0.45, noiseSwellT: 9, noiseFilt: 0.7,
          noiseReso: 0.86, noiseFiltMode: 'wander', noiseFiltFreq: 600, noiseFiltMove: 0.5, noiseFiltRate: 0.12, noiseRes: 0.75,
-         resDecay: 6, resPitch: -12, droneBright: 0.2, subLevel: 0.65, tone: 2600, space: 0.7, spaceDecay: 9, spaceDamp: 0.7 } },
+         resDecay: 6, resPitch: -12, droneBright: 0.2, subLevel: 0.65, tone: 2600, space: 0.7, spaceDecay: 9, spaceDamp: 0.7, noisePitch: -0.5 } },
   { cat: '眠り', name: '潮', seed: 31,                           // 波とドローン
     p: { noiseLevel: 0.82, droneLevel: 0.68, resLevel: 0.45, noiseColor: 0.9, noiseSwell: 0.75, noiseSwellT: 12,
          noiseCrackle: 0.25, noiseDensity: 900, noiseGrainSize: 0.1, noiseGrainRing: 0, noiseBubble: 0.25, noiseBubbleRate: 150,
          noiseBubbleSize: 0.2, noiseRes: 0.6, resDecay: 6, resPitch: -12, scale: 'pentam', root: 8, droneBright: 0.2,
-         droneParts: 6, droneBeat: 1, subLevel: 0.7, tone: 1900, space: 0.65, spaceDecay: 9, spaceDamp: 0.7 } },
+         droneParts: 6, droneBeat: 1, subLevel: 0.7, tone: 1900, space: 0.65, spaceDecay: 9, spaceDamp: 0.7, noisePitch: -0.6 } },
   { cat: '眠り', name: '夜雨', seed: 66,                         // 雨と、雨が鳴らす共鳴
     p: { noiseLevel: 0.82, resLevel: 0.7, droneLevel: 0.5, noiseBase: 0.75, noiseColor: 0.6, noiseCrackle: 0.9, noiseDensity: 600,
          noiseGrainSize: 0.3, noiseGrainRing: 0.12, noiseBubble: 0.4, noiseBubbleRate: 2.5, noiseBubbleSize: 0.6, noiseSwell: 0.25,
          noiseSwellT: 20, noiseRes: 0.85, resPitch: 12, resDecay: 2, scale: 'penta', dronePitch: -12, droneBright: 0.2,
-         droneParts: 6, subLevel: 0.6, tone: 3000, fluc: 0.6, flucRate: 0.2, space: 0.55, spaceDecay: 5, spaceDamp: 0.6 } },
+         droneParts: 6, subLevel: 0.6, tone: 3000, fluc: 0.6, flucRate: 0.2, space: 0.55, spaceDecay: 5, spaceDamp: 0.6, noisePitch: -0.4 } },
   { cat: '眠り', name: '焚火', seed: 451,                        // 火とドローン
     p: { noiseLevel: 0.8, droneLevel: 0.7, resLevel: 0.3, dronePitch: -12, droneBright: 0.25, droneParts: 5, droneBeat: 0.6,
-         subLevel: 0.75, noiseColor: 0.95, noisePitch: -0.2, noiseCrackle: 0.75, noiseDensity: 7, noiseGrainSize: 0.45,
+         subLevel: 0.75, noiseColor: 0.95, noisePitch: -0.6, noiseCrackle: 0.75, noiseDensity: 7, noiseGrainSize: 0.45,
          noiseGrainRing: 0.05, noiseFlutter: 0.3, noiseSwell: 0.3, noiseSwellT: 7, noiseRes: 0.3, resDecay: 5, resPitch: -12,
          root: 7, scale: 'fifth', tone: 2300, space: 0.45, spaceDecay: 4 } },
   { cat: '眠り', name: '沈降', seed: 404,                        // ドローンと、降り続けるグリッサンド
@@ -346,7 +346,7 @@ export const FACTORY = [
     p: { voiceLevel: 0.82, noiseLevel: 0.72, droneLevel: 0.45, resLevel: 0.3, voiceCount: '3', voiceBreath: 1, voiceCons: 0.5,
          voiceRate: 2.8, voiceGap: 0.6, voiceFar: 0.55, voiceRes: 0.4, voiceEcho: 0, voiceSpread: 0.9, noiseColor: 0.75,
          noiseSwell: 0.15, dronePitch: -12, droneBright: 0.2, droneParts: 5, subLevel: 0.6, tone: 2400, space: 0.6,
-         spaceDecay: 6, spaceDamp: 0.7 } },
+         spaceDecay: 6, spaceDamp: 0.7, noisePitch: -0.5 } },
 
   /* ---- 瞑想：音高と倍音に耳を置くもの ---- */
   { cat: '瞑想', name: '賢者の石', seed: 1972,                   // 明滅する倍音と、それに応える共鳴
@@ -357,7 +357,7 @@ export const FACTORY = [
     p: { droneLevel: 0.72, noiseLevel: 0.85, resLevel: 0.4, dronePitch: -12, droneBright: 0.5, droneParts: 14, droneBeat: 0.2,
          subLevel: 0.5, noiseColor: 0.6, noiseSwell: 0.5, noiseSwellT: 14, noiseFilt: 1, noiseReso: 0.93, noiseFiltMode: 'scale',
          noiseFiltFreq: 800, noiseFiltMove: 0.4, noiseFiltRate: 0.25, noiseRes: 0.4, resDecay: 6, root: 5, fluc: 0.4,
-         tone: 2400, space: 0.7, spaceDecay: 9 } },
+         tone: 2400, space: 0.7, spaceDecay: 9, noisePitch: -0.4 } },
   { cat: '瞑想', name: '読経', seed: 108,                        // 詠唱とドローン。鈴が中に入る
     p: { voiceLevel: 0.76, droneLevel: 0.74, bellLevel: 0.55, resLevel: 0.45, noiseLevel: 0.12, voiceCount: '3', voiceTune: 1,
          voicePitch: 92, voiceRate: 2, voiceGap: 0.3, voiceCons: 0.2, voiceBreath: 0.35, voiceFar: 0.6, voiceRes: 0.6,
@@ -370,7 +370,7 @@ export const FACTORY = [
          bellEcho: 0, root: 5, scale: 'pentam', dronePitch: -12, droneBright: 0.25, subLevel: 0.65, noiseColor: 0.85,
          resDecay: 8, resPitch: -12, tone: 1700, space: 0.75, spaceDecay: 14, spaceDamp: 0.7 } },
   { cat: '瞑想', name: '銅鑼', seed: 1300,                       // 銅鑼と、銅鑼に揺さぶられる共鳴
-    p: { bellLevel: 0.95, resLevel: 0.75, droneLevel: 0.58, noiseLevel: 0.12, dronePitch: -12, droneBright: 0.3, droneParts: 8,
+    p: { bellLevel: 0.95, resLevel: 0.8, droneLevel: 0.62, noiseLevel: 0.12, dronePitch: -12, droneBright: 0.3, droneParts: 8,
          subLevel: 0.6, bellPitch: 80, bellTimbre: 1, bellDecay: 28, bellHard: 0.6, bellBeat: 0.5, bellNotes: 1, bellGap: 0.72,
          bellRange: 0, bellFar: 0.2, bellRes: 0.9, bellEcho: 0, resDecay: 9, root: 2, scale: 'fifth', tone: 1600,
          space: 0.75, spaceDecay: 14 } },
@@ -400,17 +400,17 @@ export const FACTORY = [
          voiceFar: 0.5, voiceCons: 0.5, voiceBreath: 0.3, voiceRate: 3.4, voiceRes: 0.2, voiceSpread: 0.9, voiceEcho: 0,
          noiseColor: 0.7, noiseSwell: 0.05, noiseHum: 0.45, bellPitch: 1500, bellTimbre: 0.12, bellDecay: 0.6, bellHard: 0.6,
          bellNotes: 2, bellRate: 0.25, bellGap: 0.88, bellFar: 0.5, bellEcho: 0, dronePitch: -12, droneBright: 0.2,
-         tone: 3000, space: 0.5, spaceDecay: 2.5 } },
+         tone: 3000, space: 0.5, spaceDecay: 2.5, noisePitch: -0.5 } },
   { cat: '環境', name: '霧笛', seed: 1859,                       // 警笛と波。浮標の鐘が中に入る
-    p: { fluteLevel: 0.82, noiseLevel: 0.78, bellLevel: 0.45, droneLevel: 0.4, resLevel: 0.3, noiseColor: 0.95, noiseSwell: 0.5,
+    p: { fluteLevel: 0.82, noiseLevel: 0.86, bellLevel: 0.45, droneLevel: 0.48, resLevel: 0.3, noiseColor: 0.95, noiseSwell: 0.5,
          noiseSwellT: 13, flutePitch: 98, fluteBody: 0.9, fluteBreath: 0.2, fluteLen: 5, fluteNotes: 2, fluteGap: 0.7,
          fluteRange: 0.2, fluteGlide: 0.5, fluteVib: 0.05, fluteFar: 0.65, fluteEcho: 0.3, fluteRes: 0.4, echoMix: 0.3,
          echoTime: 0.9, echoFb: 0.4, echoTone: 0.2, bellPitch: 420, bellTimbre: 0.5, bellDecay: 5, bellHard: 0.35, bellNotes: 2,
          bellRate: 1.2, bellGap: 0.88, bellRange: 0, bellFar: 0.8, dronePitch: -12, droneBright: 0.2, subLevel: 0.6,
-         root: 9, scale: 'fifth', tone: 2000, space: 0.8, spaceDecay: 12, spaceDamp: 0.7 } },
+         root: 9, scale: 'fifth', tone: 2000, space: 0.8, spaceDecay: 12, spaceDamp: 0.7, noisePitch: -0.6 } },
   { cat: '環境', name: '船室', seed: 1851,                       // 軋む船材と、船底の低い唸り
     p: { noiseLevel: 0.82, droneLevel: 0.68, bellLevel: 0.4, resLevel: 0.25, dronePitch: -12, droneBright: 0.15, droneParts: 5,
-         droneBeat: 0.5, subLevel: 0.8, noiseBase: 1, noiseColor: 0.95, noisePitch: 0, noiseSwell: 0.7, noiseSwellT: 14,
+         droneBeat: 0.5, subLevel: 0.8, noiseBase: 1, noiseColor: 0.95, noisePitch: -0.6, noiseSwell: 0.7, noiseSwellT: 14,
          noiseCreak: 0.9, noiseCreakRate: 22, noiseHum: 0.25, noiseBubble: 0.2, noiseBubbleRate: 15, noiseBubbleSize: 0.8,
          noiseRes: 0.4, bellPitch: 420, bellTimbre: 0.5, bellDecay: 4, bellHard: 0.3, bellNotes: 2, bellRate: 1.3, bellGap: 0.9,
          bellRange: 0, bellFar: 0.9, resDecay: 5, resPitch: -12, root: 7, scale: 'fifth', tone: 1900, space: 0.45, spaceDecay: 3 } },
@@ -420,28 +420,28 @@ export const FACTORY = [
          fluteGlide: 0.6, fluteVib: 0.5, fluteFar: 0.78, fluteRes: 0.9, fluteEcho: 0.3, echoMix: 0.2, echoTime: 0.7, echoFb: 0.45,
          echoTone: 0.2, resDecay: 8, scale: 'whole', tone: 2200, space: 0.85, spaceDecay: 11, spaceDamp: 0.7 } },
   { cat: '環境', name: '風鈴', seed: 77,                         // 風鈴と風
-    p: { bellLevel: 0.9, noiseLevel: 0.75, resLevel: 0.5, droneLevel: 0.45, dronePitch: -12, droneBright: 0.2, noiseColor: 0.6,
+    p: { bellLevel: 0.9, noiseLevel: 0.85, resLevel: 0.5, droneLevel: 0.45, dronePitch: -12, droneBright: 0.2, noiseColor: 0.6,
          noiseSwell: 0.4, noiseSwellT: 8, noiseFilt: 0.35, noiseReso: 0.6, noiseFiltMode: 'wander', noiseFiltFreq: 500,
          noiseFiltMove: 0.5, noiseFiltRate: 0.15, bellPitch: 1100, bellTimbre: 0.05, bellDecay: 3.5, bellHard: 0.6, bellBeat: 0.3,
          bellNotes: 5, bellRate: 0.45, bellGap: 0.55, bellRange: 0.5, bellFar: 0.25, bellPan: 0.8, bellRes: 0.7, bellEcho: 0,
-         resDecay: 5, scale: 'penta', tone: 3400, space: 0.6, spaceDecay: 5 } },
+         resDecay: 5, scale: 'penta', tone: 3400, space: 0.6, spaceDecay: 5, noisePitch: -0.45 } },
   { cat: '環境', name: 'せせらぎ', seed: 88,                     // 水と、水が鳴らす共鳴
     p: { noiseLevel: 0.82, resLevel: 0.72, droneLevel: 0.4, dronePitch: -12, droneBright: 0.2, subLevel: 0.6, noiseBase: 0.5,
          noiseColor: 0.7, noiseBubble: 0.8, noiseBubbleRate: 90, noiseBubbleSize: 0.6, noiseCrackle: 0.15, noiseDensity: 300,
          noiseGrainSize: 0.2, noiseSwell: 0.15, noiseSwellT: 16, noiseRes: 0.7, resDecay: 3, resPitch: 12, scale: 'penta',
-         tone: 2600, space: 0.55, spaceDecay: 5 } },
+         tone: 2600, space: 0.55, spaceDecay: 5, noisePitch: -0.4 } },
   { cat: '環境', name: '空電', seed: 1901,                       // 空電と、受信しかけの声
-    p: { noiseLevel: 0.82, voiceLevel: 0.7, droneLevel: 0.5, resLevel: 0.2, dronePitch: -12, droneBright: 0.2, subLevel: 0.6,
+    p: { noiseLevel: 0.82, voiceLevel: 0.78, droneLevel: 0.58, resLevel: 0.2, dronePitch: -12, droneBright: 0.2, subLevel: 0.6,
          noiseColor: 0.5, noiseSwell: 0.1, noiseCrackle: 0.6, noiseDensity: 5, noiseGrainSize: 0.2, noiseFlutter: 0.35,
          noiseHum: 0.4, noiseFilt: 0.8, noiseReso: 0.92, noiseFiltMode: 'whistler', noiseFiltFreq: 900, noiseFiltMove: 0.7,
          noiseFiltRate: 0.2, noiseEcho: 0.3, echoMix: 0.3, echoTime: 0.6, echoFb: 0.5, echoTone: 0.25, voiceFar: 0.8,
-         voiceGap: 0.7, voiceBreath: 0.4, voiceCount: '2', voiceEcho: 0.5, tone: 3600, space: 0.45 } },
+         voiceGap: 0.7, voiceBreath: 0.4, voiceCount: '2', voiceEcho: 0.5, tone: 3600, space: 0.45, noisePitch: -0.4 } },
   { cat: '環境', name: '蓄音機', seed: 1925,                     // 回る旋律と針音
     p: { arpLevel: 0.8, noiseLevel: 0.75, droneLevel: 0.3, resLevel: 0.2, droneBright: 0.3, dronePitch: -12, noiseColor: 0.55,
          noiseSwell: 0.05, noiseCrackle: 0.6, noiseDensity: 12, noiseGrainSize: 0.1, noiseGrainRing: 0, noiseHum: 0.3,
          noiseRes: 0, arpMode: 'loops', arpRate: 1, arpGate: 1.5, arpSoft: 0.5, arpWidth: 0.4, arpCenter: 330, arpEcho: 0.9,
          arpRes: 0.2, echoMix: 0.55, echoTime: 0.11, echoFb: 0.25, echoTone: 0.2, echoWow: 1, echoPing: 0, scale: 'dorian',
-         temper: 'et', tone: 2000, width: 0.25, space: 0.35, spaceDecay: 2 } },
+         temper: 'et', tone: 2000, width: 0.25, space: 0.35, spaceDecay: 2, noisePitch: -0.45 } },
 
   /* ---- 実験：聴くためのもの。眠りには向かない ---- */
   { cat: '実験', name: '電気嵐', seed: 1969,                     // ドローン・グリッサンド・笛の三本立て
@@ -459,7 +459,7 @@ export const FACTORY = [
          bellHard: 0.4, bellNotes: 2, bellRate: 0.45, bellGap: 0.55, bellFar: 0.4, bellEcho: 0.8, dub: 0.55, echoMix: 0.5,
          echoTime: 0.45, echoFb: 0.68, echoTone: 0.2, arpEcho: 0.6, resDecay: 5, tone: 2600, space: 0.5 } },
   { cat: '実験', name: '交信', seed: 1963,                       // 乱択のアルペジオと遠い声。荒れた雑音が中に入る
-    p: { arpLevel: 0.78, voiceLevel: 0.75, noiseLevel: 0.6, droneLevel: 0.5, resLevel: 0.25, droneBright: 0.6, droneEven: 0.2,
+    p: { arpLevel: 0.78, voiceLevel: 0.82, noiseLevel: 0.68, droneLevel: 0.56, resLevel: 0.25, droneBright: 0.6, droneEven: 0.2,
          noiseColor: 0.4, noisePitch: 0.2, noiseFlutter: 0.5, noiseCrush: 0.35, arpMode: 'step', arpDir: 'rand', arpRate: 4,
          arpGate: 0.6, arpSoft: 0.2, arpWidth: 0.35, arpRest: 0.3, arpCenter: 500, arpEcho: 0.8, scale: 'chroma', temper: 'et',
          voiceBreath: 0.6, voiceFar: 0.6, voiceGap: 0.55, voiceEcho: 0.7, phaserMix: 0.6, phaserRate: 0.3, echoMix: 0.6,
@@ -470,5 +470,5 @@ export const FACTORY = [
     p: { noiseLevel: 0.8, resLevel: 0.7, droneLevel: 0.5, droneBright: 0.3, subLevel: 0.6, noiseColor: 0.7, noiseSwell: 0.3,
          noiseFb: 0.97, noiseFiltMode: 'scale', noiseFiltFreq: 110, noiseFiltMove: 0.45, noiseFiltRate: 0.06, noiseDrive: 0.4,
          noiseHum: 0.4, noiseCrush: 0.1, noiseRes: 0.3, phaserMix: 0.5, noiseEcho: 0.4, echoMix: 0.4, echoTime: 0.5, echoFb: 0.6,
-         echoTone: 0.2, scale: 'pentam', resDecay: 4, tone: 2400, space: 0.6 } },
+         echoTone: 0.2, scale: 'pentam', resDecay: 4, tone: 2400, space: 0.6, noisePitch: -0.5 } },
 ];
