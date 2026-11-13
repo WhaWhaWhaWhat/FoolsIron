@@ -31,6 +31,7 @@ export const SECTIONS = [
   { id: 'tune',  label: '調律と場' },
   { id: 'drone', label: 'ドローン' },
   { id: 'noise', label: 'ノイズ' },
+  { id: 'noise3', label: 'ノイズ事象' },
   { id: 'noise2', label: 'ノイズ加工' },
   { id: 'res',   label: 'RES' },
   { id: 'arp',   label: 'ARP' },
@@ -100,17 +101,26 @@ export const PARAMS = [
 
   // 雑音
   { id: 'noisePitch',  sec: 'noise', label: '高低', type: 'lin', min: -1, max: 1, def: 0, unit: 'bi' },
+  { id: 'noiseBase',   sec: 'noise', label: '地の雑音', type: 'lin', min: 0, max: 1, def: 1, unit: '%' },
   { id: 'noiseColor',  sec: 'noise', label: '色', type: 'lin', min: 0, max: 1, def: 0.7, unit: '%' },
   { id: 'noiseSwell',  sec: 'noise', label: '波の深さ',   type: 'lin', min: 0, max: 1, def: 0.4, unit: '%' },
   { id: 'noiseSwellT', sec: 'noise', label: '波の周期',   type: 'log', min: 2, max: 40, def: 9, unit: 's' },
   { id: 'noiseWidth',  sec: 'noise', label: 'ステレオ幅', type: 'lin', min: 0, max: 1, def: 0.8, unit: '%' },
   { id: 'noiseRes',    sec: 'noise', label: 'RES 送り', type: 'lin', min: 0, max: 1, def: 0.5, unit: '%' },
   // 素材
-  { id: 'noiseCrackle', sec: 'noise', label: 'パチパチ', type: 'lin', min: 0, max: 1, def: 0, unit: '%' },
-  { id: 'noiseDensity', sec: 'noise', label: '粒の密度', type: 'log', min: 0.5, max: 3000, def: 40, unit: '/s' },
   { id: 'noiseFlutter', sec: 'noise', label: '荒れ',     type: 'lin', min: 0, max: 1, def: 0, unit: '%' },
   { id: 'noiseHum',     sec: 'noise', label: 'ハム',     type: 'lin', min: 0, max: 1, def: 0, unit: '%' },
   { id: 'noiseCrush',   sec: 'noise', label: 'クラッシュ', type: 'lin', min: 0, max: 1, def: 0, unit: '%' },
+  // 事象：物理由来の非楽音
+  { id: 'noiseCrackle',    sec: 'noise3', label: '粒子',     type: 'lin', min: 0, max: 1, def: 0, unit: '%' },
+  { id: 'noiseDensity',    sec: 'noise3', label: '粒の密度', type: 'log', min: 0.5, max: 3000, def: 40, unit: '/s' },
+  { id: 'noiseGrainSize',  sec: 'noise3', label: '粒の大きさ', type: 'lin', min: 0, max: 1, def: 0.15, unit: '%' },
+  { id: 'noiseGrainRing',  sec: 'noise3', label: '粒の響き', type: 'lin', min: 0, max: 1, def: 0.1, unit: '%' },
+  { id: 'noiseBubble',     sec: 'noise3', label: '泡',       type: 'lin', min: 0, max: 1, def: 0, unit: '%' },
+  { id: 'noiseBubbleRate', sec: 'noise3', label: '泡の密度', type: 'log', min: 0.2, max: 400, def: 8, unit: '/s' },
+  { id: 'noiseBubbleSize', sec: 'noise3', label: '泡の大きさ', type: 'lin', min: 0, max: 1, def: 0.5, unit: '%' },
+  { id: 'noiseCreak',      sec: 'noise3', label: '軋み',     type: 'lin', min: 0, max: 1, def: 0, unit: '%' },
+  { id: 'noiseCreakRate',  sec: 'noise3', label: '軋みの速さ', type: 'log', min: 4, max: 300, def: 40, unit: 'Hz' },
   // 加工
   { id: 'noiseFilt',     sec: 'noise2', label: 'フィルター', type: 'lin', min: 0, max: 1, def: 0, unit: '%' },
   { id: 'noiseFiltFreq', sec: 'noise2', label: '周波数',     type: 'log', min: 60, max: 8000, def: 800, unit: 'Hz' },

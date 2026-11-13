@@ -177,7 +177,12 @@ class Noise {
     this.buf = [new Float32Array(128), new Float32Array(128)];
     this.sg = new Float32Array(128);
     // 素材
-    this.ck = [0, 0];                                  // パチパチの尾
+    // 事象：粒子（ぶつかる粒）、泡（水中の気泡）、軋み（貼り付いては滑る摩擦）
+    const f8 = () => new Float64Array(8);
+    this.pt = { x: f8(), y: f8(), c: f8(), s: f8(), be: f8(), bd: f8(), g: f8(), gl: f8(), gr: f8() }; this.pi = 0; this.ptOn = false;
+    this.bb = { ph: f8(), inc: f8(), di: f8(), a: f8(), d: f8(), gl: f8(), gr: f8() }; this.bi = 0; this.bbOn = false;
+    this.cr = { x: new Float64Array(3), y: new Float64Array(3), c: new Float64Array(3), s: new Float64Array(3) };
+    this.crPh = 0; this.crThr = 1; this.crW = new Wander(rng); this.crOn = false;
     this.spT = 1; this.spV = 1; this.spLeft = 0;        // 荒れ（不規則な噴き）
     this.humPh = 0;
     this.crCnt = [0, 0]; this.crHold = [0, 0];
@@ -222,6 +227,107 @@ class Noise {
     this.whGate += (gate - this.whGate) * (1 - Math.exp(-dt / 0.05));
     return clamp(Math.pow(2, this.lf), 30, Math.min(12000, SR * 0.4));
   }
+  // 物理由来の事象を、左右の作業領域へ足し込む
+  events(P, n, dt) {
+    const rng = this.rng, A = this.buf[0], B = this.buf[1];
+
+    // 粒子：多数の粒が器や地面にぶつかる。一粒ごとに、短い雑音の突きが小さな共鳴体を鳴らす
+    const pg = P.noiseCrackle * P.noiseCrackle;
+    if (pg > 1e-4 || this.ptOn) {
+      const q = this.pt, size = P.noiseGrainSize, ring = P.noiseGrainRing;
+      const pd = pg > 1e-4 ? P.noiseDensity / SR : 0;
+      const lvl = pg * 1.4 * Math.min(1, Math.pow(200 / P.noiseDensity, 0.4));
+      let e = 0;
+      for (let k = 0; k < n; k++) {
+        const u = white();
+        if (u > 0 && u < pd) {
+          const i = this.pi = (this.pi + 1) & 7;
+          const fc = Math.min(6500 * Math.pow(0.03, size) * Math.pow(2, (rng() - 0.5) * 1.8), SR * 0.4);
+          const t60 = (0.003 + 0.06 * size * size) * (1 + 20 * ring * ring);
+          const r = Math.exp(-LN1000 / (t60 * SR)), th = 2 * Math.PI * fc / SR, a = rng();
+          q.c[i] = r * Math.cos(th); q.s[i] = r * Math.sin(th);
+          q.be[i] = 0.25 + 0.75 * a * a; q.bd[i] = Math.exp(-1 / ((0.0003 + 0.003 * size) * SR));
+          q.g[i] = Math.sqrt(1 - r) * 2.2;
+          const p = rng() * 2 - 1; q.gl[i] = panL(p * 0.9); q.gr[i] = panR(p * 0.9);
+        }
+        let l = 0, rr = 0;
+        for (let i = 0; i < 8; i++) {
+          const be = q.be[i], x = q.x[i], y = q.y[i];
+          if (be < 1e-5 && x * x + y * y < 1e-10) continue;
+          const nx = q.c[i] * x - q.s[i] * y + (be > 1e-5 ? white() * be * q.g[i] : 0);
+          const ny = q.s[i] * x + q.c[i] * y;
+          q.x[i] = nx; q.y[i] = ny; q.be[i] = be * q.bd[i];
+          l += ny * q.gl[i]; rr += ny * q.gr[i]; e += ny * ny;
+        }
+        A[k] += l * lvl; B[k] += rr * lvl;
+      }
+      this.ptOn = e > 1e-9 || pd > 0;
+    }
+
+    // 泡：水中の気泡。小さいほど高く短く鳴り、水面へ近づくにつれ音が上へ滑る
+    const bg = P.noiseBubble * P.noiseBubble;
+    if (bg > 1e-4 || this.bbOn) {
+      const q = this.bb, size = P.noiseBubbleSize;
+      const pd = bg > 1e-4 ? P.noiseBubbleRate / SR : 0;
+      const lvl = bg * 0.6 * Math.min(1, Math.pow(40 / P.noiseBubbleRate, 0.4));
+      let e = 0;
+      for (let k = 0; k < n; k++) {
+        const u = white();
+        if (u > 0 && u < pd) {
+          const i = this.bi = (this.bi + 1) & 7;
+          const fb = Math.min(4500 * Math.pow(0.07, size) * Math.pow(2, (rng() - 0.5) * 1.6), SR * 0.3);
+          const dmp = 0.043 * fb + 0.0014 * Math.pow(fb, 1.5);            // 減衰（毎秒）。半径の小さい泡ほど速く消える
+          const a = rng();
+          q.ph[i] = 0; q.inc[i] = fb / SR; q.di[i] = fb * dmp * 0.14 * rng() / SR / SR;
+          q.a[i] = (0.2 + 0.8 * a * a) * Math.pow(600 / fb, 0.3); q.d[i] = Math.exp(-dmp / SR);
+          const p = rng() * 2 - 1; q.gl[i] = panL(p * 0.9); q.gr[i] = panR(p * 0.9);
+        }
+        let l = 0, rr = 0;
+        for (let i = 0; i < 8; i++) {
+          const a = q.a[i];
+          if (a < 1e-5) continue;
+          let p = q.ph[i] + q.inc[i]; if (p >= 1) p -= 1;
+          q.ph[i] = p; q.inc[i] += q.di[i]; q.a[i] = a * q.d[i];
+          const x = p * TS, j = x | 0, v = (SIN[j] + (SIN[j + 1] - SIN[j]) * (x - j)) * a;
+          l += v * q.gl[i]; rr += v * q.gr[i]; e += a;
+        }
+        A[k] += l * lvl; B[k] += rr * lvl;
+      }
+      this.bbOn = e > 1e-5 || pd > 0;
+    }
+
+    // 軋み：押す力が溜まり、限度を越えた瞬間に滑って胴を叩く。その繰り返しが軋みになる
+    const cg = P.noiseCreak * P.noiseCreak;
+    if (cg > 1e-4 || this.crOn) {
+      const q = this.cr, rate = P.noiseCreakRate;
+      // 押す速さは不規則に漂い、止まることもある
+      const speed = cg > 1e-4 ? clamp(this.crW.step(dt, 0.7) * 2.4 - 0.45, 0, 1.6) : 0;
+      const k3 = Math.pow(60 / rate, 0.25);
+      const modes = [310 * k3, 790 * k3, 2050 * k3];
+      for (let i = 0; i < 3; i++) {
+        const r = Math.exp(-LN1000 / ((0.05 - 0.012 * i) * SR)), th = 2 * Math.PI * Math.min(modes[i], SR * 0.4) / SR;
+        q.c[i] = r * Math.cos(th); q.s[i] = r * Math.sin(th);
+      }
+      const inc = rate * speed / SR, lvl = cg * 0.35 * Math.min(1, Math.pow(40 / rate, 0.3));
+      let ph = this.crPh, thr = this.crThr, e = 0;
+      for (let k = 0; k < n; k++) {
+        ph += inc;
+        let imp = 0;
+        if (ph >= thr) { ph -= thr; imp = thr * (white() > 0 ? 1 : -1); thr = 0.93 + 0.14 * rng(); }       // 限度は毎回僅かに違う。揃いすぎれば楽音に、乱れすぎれば雑音になる
+        let o = 0;
+        for (let i = 0; i < 3; i++) {
+          const x = q.x[i], y = q.y[i];
+          const nx = q.c[i] * x - q.s[i] * y + imp * (1 - 0.25 * i);
+          const ny = q.s[i] * x + q.c[i] * y;
+          q.x[i] = nx; q.y[i] = ny; o += ny;
+        }
+        e += o * o;
+        A[k] += o * lvl; B[k] += o * lvl * 0.8;
+      }
+      this.crPh = ph; this.crThr = thr;
+      this.crOn = e > 1e-9 || speed > 0;
+    }
+  }
   render(P, S, f0, ratios, n, tL, tR, excN) {
     if (this.buf[0].length < n) { this.buf = [new Float32Array(n), new Float32Array(n)]; this.sg = new Float32Array(n); }
     const rng = this.rng, dt = n / SR;
@@ -229,7 +335,8 @@ class Noise {
     let wW = 0, wP = 0, wB = 0;
     if (c < 0.5) { wW = Math.cos(c * Math.PI); wP = Math.sin(c * Math.PI); }
     else { wP = Math.cos((c - 0.5) * Math.PI); wB = Math.sin((c - 0.5) * Math.PI); }
-    wW *= 0.35; wP *= 0.118; wB *= 2.3;       // 三色の実効値を揃える係数
+    const base = P.noiseBase * P.noiseBase;       // 地の雑音の量。零にすれば事象だけが鳴る
+    wW *= 0.35 * base; wP *= 0.118 * base; wB *= 2.3 * base;       // 三色の実効値を揃える係数
 
     // 荒れ：不規則な間隔で、音量が跳ね、沈む。左右共通
     const fl = P.noiseFlutter, sg = this.sg;
@@ -251,14 +358,12 @@ class Noise {
     const hum = P.noiseHum * P.noiseHum * 0.22;
     let hp = this.humPh;
     const hinc = 50 / SR;
-    // パチパチ：疎らな衝撃
-    const crk = P.noiseCrackle * P.noiseCrackle * 1.8 * Math.min(1, Math.pow(150 / P.noiseDensity, 0.3)), pd = P.noiseDensity / SR;
     // クラッシュ：標本化を粗くする
     const crN = 1 + Math.floor(P.noiseCrush * P.noiseCrush * 60);
 
     for (let ch = 0; ch < 2; ch++) {
       const b = this.b[ch], o = this.buf[ch];
-      let br = this.br[ch], ck = this.ck[ch];
+      let br = this.br[ch];
       let b0 = b[0], b1 = b[1], b2 = b[2], b3 = b[3], b4 = b[4], b5 = b[5], b6 = b[6];
       let ph = this.humPh;
       for (let k = 0; k < n; k++) {
@@ -271,12 +376,6 @@ class Noise {
         br = (br + 0.02 * w) / 1.02;
         let y = w * wW + pink * wP + br * wB;
         if (fl > 0.002) y *= sg[k];
-        if (crk > 1e-4) {
-          const u = white();
-          ck *= 0.55;
-          if (u > 0 && u < pd) ck += (white() > 0 ? 1 : -1) * (0.3 + 0.7 * u / pd);
-          y += ck * crk;
-        }
         if (hum > 1e-5) {
           ph += hinc; if (ph >= 1) ph -= 1;
           const x = ph * TS, j = x | 0, s1 = SIN[j];
@@ -286,7 +385,7 @@ class Noise {
       }
       hp = ph;
       b[0] = b0; b[1] = b1; b[2] = b2; b[3] = b3; b[4] = b4; b[5] = b5; b[6] = b6;
-      this.br[ch] = br; this.ck[ch] = ck;
+      this.br[ch] = br;
       if (crN > 1) {
         let cnt = this.crCnt[ch], hold = this.crHold[ch];
         for (let k = 0; k < n; k++) { if (++cnt >= crN) { cnt = 0; hold = o[k]; } o[k] = hold; }
@@ -294,6 +393,7 @@ class Noise {
       }
     }
     this.humPh = hp;
+    this.events(P, n, dt);
 
     // 加工：帰還路 → 共振フィルター → 歪み
     const mix1 = P.noiseFilt, fb1 = P.noiseFb * 1.04;
@@ -597,33 +697,84 @@ class Arp {
   }
 }
 
-/* ---------- 声：フォルマント合成による、意味の取れぬ発話 ---------- */
+/* ---------- 声：声道の物理モデルによる、意味の取れぬ発話 ---------- */
+// 声門の音源を、区間に刻んだ管（声門 0 〜 唇 1）に通す。舌と唇で管の断面を動かし、狭めた所で乱流を起こす
+// 母音：[舌の位置, 舌の高さ（小さいほど狭い）, 唇の開き（9 は丸めなし）]。声道の応答を測って合わせ込んだ値
 const VOW = {
-  a: [750, 1200, 2500], i: [290, 2250, 2950], u: [330, 1250, 2300], e: [480, 1900, 2550],
-  o: [470, 850, 2500], '@': [500, 1450, 2500], E: [600, 1700, 2500], O: [580, 950, 2500],
+  a: [0.32, 2.55, 9], i: [0.68, 2.35, 1.1], u: [0.50, 3.25, 0.45], e: [0.60, 2.85, 9],
+  o: [0.46, 2.25, 0.8], '@': [0.54, 2.75, 1.1], E: [0.52, 3.45, 9], O: [0.42, 2.25, 1.1],
 };
-// d=長さ(秒) F=フォルマント（無ければ後続の母音） av=有声 ah=気息 af=摩擦 fr=[摩擦の中心Hz,Q] nas=鼻音 fast=速い遷移
+// 子音：d=長さ(秒) cx=狭めの位置 cd=狭めの開き（負は閉鎖） vel=鼻へ抜ける av=有声 ah=気息 fr=摩擦 T=舌の構え
 const CONS = {
-  m: { w: 1.0, p: [{ d: .07, F: [250, 1000, 2200], av: .45, nas: 1 }] },
-  n: { w: 1.0, p: [{ d: .06, F: [250, 1500, 2500], av: .45, nas: 1 }] },
-  r: { w: 0.9, p: [{ d: .035, F: [350, 1400, 2400], av: .5 }] },
-  l: { w: 0.5, p: [{ d: .06, F: [330, 1100, 2700], av: .6 }] },
-  w: { w: 0.5, p: [{ d: .06, F: [300, 700, 2300], av: .6 }] },
-  y: { w: 0.5, p: [{ d: .06, F: [280, 2200, 2900], av: .6 }] },
-  h: { w: 0.7, p: [{ d: .07, av: 0, ah: .6 }] },
-  b: { w: 0.5, p: [{ d: .06, F: [200, 800, 2200], av: .1, fast: 1 }, { d: .008, av: .3, af: .25, fr: [700, .7] }] },
-  d: { w: 0.6, p: [{ d: .055, F: [200, 1700, 2600], av: .1, fast: 1 }, { d: .008, av: .3, af: .3, fr: [4000, 1] }] },
-  g: { w: 0.5, p: [{ d: .06, F: [200, 2100, 2400], av: .1, fast: 1 }, { d: .01, av: .3, af: .3, fr: [1900, 2] }] },
-  p: { w: 0.3, p: [{ d: .07, F: [200, 800, 2200], av: 0, fast: 1 }, { d: .01, av: 0, af: .4, fr: [700, .7] }, { d: .03, av: 0, ah: .5 }] },
-  t: { w: 0.5, p: [{ d: .07, F: [200, 1700, 2600], av: 0, fast: 1 }, { d: .012, av: 0, af: .5, fr: [4200, 1] }, { d: .03, av: 0, ah: .5 }] },
-  k: { w: 0.5, p: [{ d: .075, F: [200, 2100, 2400], av: 0, fast: 1 }, { d: .015, av: 0, af: .5, fr: [1900, 2] }, { d: .035, av: 0, ah: .5 }] },
-  s: { w: 0.5, p: [{ d: .1, F: [300, 1700, 2600], av: 0, af: .45, fr: [6000, 1.5] }] },
-  S: { w: 0.4, p: [{ d: .1, F: [300, 2000, 2600], av: 0, af: .45, fr: [3000, 1.5] }] },
-  f: { w: 0.2, p: [{ d: .08, F: [300, 1100, 2300], av: 0, af: .2, fr: [4500, .5] }] },
-  z: { w: 0.2, p: [{ d: .07, F: [250, 1700, 2600], av: .5, af: .25, fr: [6000, 1.5] }] },
+  m: { w: 1.0, p: [{ d: .07, cx: 0.97, cd: -0.2, vel: 1, av: 0.8 }] },
+  n: { w: 1.0, p: [{ d: .06, cx: 0.83, cd: -0.2, vel: 1, av: 0.8 }] },
+  r: { w: 0.9, p: [{ d: .03, cx: 0.83, cd: 0.08, av: 0.8 }] },
+  l: { w: 0.5, p: [{ d: .06, cx: 0.83, cd: 0.6, av: 0.9 }] },
+  w: { w: 0.5, p: [{ d: .06, cx: 0.97, cd: 0.5, av: 0.9, T: [0.36, 2.3] }] },
+  y: { w: 0.5, p: [{ d: .06, av: 0.9, T: [0.68, 2.1] }] },
+  h: { w: 0.7, p: [{ d: .07, av: 0, ah: 1 }] },
+  b: { w: 0.5, p: [{ d: .06, cx: 0.97, cd: -0.2, av: 0.5 }] },
+  d: { w: 0.6, p: [{ d: .055, cx: 0.83, cd: -0.2, av: 0.5 }] },
+  g: { w: 0.5, p: [{ d: .06, cx: 0.55, cd: -0.2, av: 0.5 }] },
+  p: { w: 0.3, p: [{ d: .07, cx: 0.97, cd: -0.2, av: 0 }, { d: .03, av: 0, ah: 0.8 }] },
+  t: { w: 0.5, p: [{ d: .07, cx: 0.83, cd: -0.2, av: 0 }, { d: .03, av: 0, ah: 0.8 }] },
+  k: { w: 0.5, p: [{ d: .075, cx: 0.55, cd: -0.2, av: 0 }, { d: .035, av: 0, ah: 0.8 }] },
+  s: { w: 0.5, p: [{ d: .1, cx: 0.84, cd: 0.42, av: 0, ah: 0.4, fr: 1 }] },
+  S: { w: 0.4, p: [{ d: .1, cx: 0.74, cd: 0.45, av: 0, ah: 0.4, fr: 1 }] },
+  f: { w: 0.2, p: [{ d: .08, cx: 0.97, cd: 0.4, av: 0, ah: 0.4, fr: 0.6 }] },
+  z: { w: 0.2, p: [{ d: .07, cx: 0.84, cd: 0.42, av: 0.7, fr: 0.8 }] },
 };
+const T_BLADE = 10 / 44, T_TIP = 32 / 44, T_LIP = 39 / 44, T_NOSE = 17 / 44;
 
-// 種から「言語」を造る。母音と子音の偏り、繰り返し現れる語彙を持たせる
+// 声道：行きの波 R と帰りの波 L を、区間の継ぎ目ごとに断面の比で反射させる（Kelly-Lochbaum）
+class Tract {
+  constructor(N) { this.setN(N); }
+  setN(N) {
+    this.N = N;
+    const f = n => new Float64Array(n);
+    this.R = f(N); this.L = f(N); this.jR = f(N + 1); this.jL = f(N + 1); this.refl = f(N + 1); this.dia = f(N);
+    const NN = this.NN = Math.max(6, Math.round(N * 28 / 44));
+    this.nR = f(NN); this.nL = f(NN); this.njR = f(NN + 1); this.njL = f(NN + 1); this.nrefl = f(NN + 1);
+    const nA = f(NN);
+    for (let i = 0; i < NN; i++) {
+      const d = 2 * (i / NN), dm = Math.min(1.9, d < 1 ? 0.4 + 1.6 * d : 0.5 + 1.5 * (2 - d));
+      nA[i] = dm * dm;
+    }
+    for (let i = 1; i < NN; i++) this.nrefl[i] = (nA[i - 1] - nA[i]) / (nA[i - 1] + nA[i]);
+    this.ns = Math.max(2, Math.min(N - 2, Math.round(N * T_NOSE)));
+    this.rl = 0; this.rr = 0; this.rn = -1; this.noseOn = false; this.noseIdle = 0;
+  }
+  // tx=舌の位置 td=舌の高さ lip=唇の開き cx,cd=子音の狭めの位置と開き velum=鼻への開き
+  shape(tx, td, lip, cx, cd, velum) {
+    const N = this.N, dia = this.dia, amp = 1.5 - (2 + (td - 2) / 1.5) + 1.7;
+    const cw = cx < 25 / 44 ? 10 / 44 : cx >= T_TIP ? 5 / 44 : (10 - 5 * (cx - 25 / 44) / (T_TIP - 25 / 44)) / 44;
+    const kc = 1.1 * Math.PI / (T_TIP - T_BLADE);
+    for (let i = 0; i < N; i++) {
+      const x = (i + 0.5) / N;
+      let d = x < 7 / 44 ? 0.6 : x < 12 / 44 ? 1.1 : 1.5;
+      if (x > T_BLADE - 0.03 && x < T_LIP) {
+        const e = Math.min(1, (x - (T_BLADE - 0.03)) / 0.06, (T_LIP - x) / 0.06);
+        d = 1.5 - amp * Math.cos(kc * (tx - x)) * e * e * (3 - 2 * e);
+      }
+      if (x > T_LIP - 0.02 && lip < d) d = lip + (d - lip) * clamp((T_LIP + 0.03 - x) / 0.05, 0, 1);      // 唇の丸め
+      if (cd < d) {
+        const rel = Math.abs(x - cx) - 0.5 / N;
+        d = cd + (d - cd) * (rel <= 0 ? 0 : rel > cw ? 1 : 0.5 * (1 - Math.cos(Math.PI * rel / cw)));
+      }
+      dia[i] = d < 0 ? 0 : d;
+    }
+    const refl = this.refl;
+    for (let i = 1; i < N; i++) {
+      const a = dia[i - 1] * dia[i - 1], b = dia[i] * dia[i];
+      refl[i] = b < 1e-6 ? 0.999 : (a - b) / (a + b);
+    }
+    const ns = this.ns, a = dia[ns - 1] * dia[ns - 1], b = dia[ns] * dia[ns], c = velum * velum, sum = a + b + c + 1e-9;
+    this.rl = (2 * a - sum) / sum; this.rr = (2 * b - sum) / sum; this.rn = (2 * c - sum) / sum;
+    if (velum > 0.03) { this.noseOn = true; this.noseIdle = 0; }
+    else if (this.noseOn && ++this.noseIdle > 600) { this.noseOn = false; this.nR.fill(0); this.nL.fill(0); }   // 鼻が閉じて静まれば省く
+  }
+}
+
 function makeLang(rng) {
   const vk = Object.keys(VOW).filter(() => rng() < 0.7);
   for (const k of ['a', 'i', 'o']) if (vk.length < 3 && !vk.includes(k)) vk.push(k);
@@ -660,22 +811,32 @@ class Speaker {
     this.rateMul = [1, 0.9, 1.12][i];
     this.panBase = [0, -0.7, 0.7][i];
     this.segs = []; this.segLeft = Math.floor((0.3 + rng() * 1.5 + i * 0.8) * SR);
-    this.f = [500, 1500, 2500]; this.tf = [500, 1500, 2500];
-    this.bwm = 1; this.tbwm = 1;
-    this.av = 0; this.ah = 0; this.af = 0; this.tav = 0; this.tah = 0; this.taf = 0;
-    this.fast = 0;
+    this.tract = new Tract(24);
+    // 調音の現在値と目標値
+    this.tx = 0.5; this.td = 2.8; this.lip = 9; this.cx = 0.8; this.cd = 3; this.vel = 0.01;
+    this.ttx = 0.5; this.ttd = 2.8; this.tlip = 9; this.tcd = 3; this.tvel = 0.01;
+    this.av = 0; this.ah = 0; this.fr = 0; this.tav = 0; this.tah = 0; this.tfr = 0;
     this.lp = Math.log2(110); this.tlp = this.lp;
-    this.A = new Float64Array(5); this.B = new Float64Array(5); this.C = new Float64Array(5);
-    this.y1 = new Float64Array(5); this.y2 = new Float64Array(5);
-    this.ph = rng(); this.tilt = 0;
-    this.fb = [0, 0, 0, 0, 0]; this.fx1 = 0; this.fx2 = 0; this.fy1 = 0; this.fy2 = 0;   // 摩擦用の帯域通過
+    // 声門
+    this.gt = rng(); this.ten = 0.6; this.setWave(0.6);
+    this.an = [0, 0, 0, 0]; this.fn = [0, 0, 0, 0];            // 気息と摩擦の帯域通過の状態
     this.hp = 0; this.l1 = 0; this.l2 = 0;
-    this.jit = new Wander(rng); this.drift = new Wander(rng); this.pw = new Wander(rng);
+    this.jit = new Wander(rng); this.drift = new Wander(rng); this.pw = new Wander(rng); this.tw = new Wander(rng);
     this.active = false; this.gE = 0;
   }
-  setFric(fr) {
-    const w0 = 2 * Math.PI * Math.min(fr[0], SR * 0.4) / SR, al = Math.sin(w0) / (2 * fr[1]), a0 = 1 + al;
-    this.fb = [al / a0, 0, -al / a0, -2 * Math.cos(w0) / a0, (1 - al) / a0];
+  // 声門の波形（LF モデル）を、張りの強さから一周期ぶん用意する
+  setWave(ten) {
+    const Rd = clamp(3 * (1 - ten), 0.5, 2.7);
+    const Ra = -0.01 + 0.048 * Rd, Rk = 0.224 + 0.118 * Rd;
+    const Rg = (Rk / 4) * (0.5 + 1.2 * Rk) / (0.11 * Rd - Ra * (0.5 + 1.2 * Rk));
+    const Tp = 1 / (2 * Rg), Te = Tp + Tp * Rk;
+    const eps = 1 / Ra, shift = Math.exp(-eps * (1 - Te)), Delta = 1 - shift;
+    const rhs = ((1 / eps) * (shift - 1) + (1 - Te) * shift) / Delta;
+    const upper = -(-(Te - Tp) / 2 + rhs);
+    const omega = Math.PI / Tp, sn = Math.sin(omega * Te);
+    const alpha = Math.log(-Math.PI * sn * upper / (Tp * 2)) / (Tp / 2 - Te);
+    this.wA = alpha; this.wE0 = -1 / (sn * Math.exp(alpha * Te)); this.wEps = eps; this.wSh = shift;
+    this.wD = Delta; this.wTe = Te; this.wOm = omega; this.loud = Math.pow(ten, 0.25);
   }
   buildPhrase(P, lang) {
     const rng = this.rng, syls = [];
@@ -685,34 +846,40 @@ class Speaker {
       for (const s of w) syls.push(s);
     }
     const ds = 4.5 / (P.voiceRate * this.rateMul), N = syls.length;
-    let lastF = VOW.a, pm = 1;
+    let lastV = VOW.a, pm = 1;
     syls.forEach((s, i) => {
       const pos = N > 1 ? i / (N - 1) : 1, last = i === N - 1;
       pm = (1.16 - 0.3 * pos) * (1 + (rng() - 0.5) * 0.14);
       if (last && rng() < 0.2) pm *= 1.22;
-      const Vf = VOW[s.v];
+      const V = VOW[s.v];
       if (s.c) {
         for (const q of CONS[s.c].p) {
-          this.segs.push({ d: q.d * (0.5 + 0.5 * ds), F: q.F || Vf, av: q.av, ah: q.ah || 0, af: q.af || 0,
-            fr: q.fr, nas: q.nas, fast: q.fast, pm });
+          this.segs.push({ d: q.d * (0.5 + 0.5 * ds), V: q.T ? [q.T[0], q.T[1], V[2]] : V, cx: q.cx, cd: q.cd,
+            vel: q.vel, av: q.av, ah: q.ah || 0, fr: q.fr || 0, pm });
         }
       }
       const vd = (0.1 + rng() * 0.08) * ds * (last ? 1.6 : 1);
-      this.segs.push({ d: vd, F: Vf, av: 1, ah: 0, af: 0, pm });
-      lastF = Vf;
-      if (s.v2) { lastF = VOW[s.v2]; this.segs.push({ d: vd * 0.7, F: lastF, av: 0.95, ah: 0, af: 0, pm: pm * 0.97 }); }
-      if (s.n) this.segs.push({ d: 0.07 * ds, F: [250, 1500, 2500], av: 0.4, ah: 0, af: 0, nas: 1, pm: pm * 0.95 });
+      this.segs.push({ d: vd, V, av: 1, ah: 0, fr: 0, pm });
+      lastV = V;
+      if (s.v2) { lastV = VOW[s.v2]; this.segs.push({ d: vd * 0.7, V: lastV, av: 0.95, ah: 0, fr: 0, pm: pm * 0.97 }); }
+      if (s.n) this.segs.push({ d: 0.07 * ds, V: lastV, cx: 0.83, cd: -0.2, vel: 1, av: 0.7, ah: 0, fr: 0, pm: pm * 0.95 });
     });
-    this.segs.push({ d: 0.08, F: lastF, av: 0, ah: 0, af: 0, pm: pm * 0.9 });
-    this.segs.push({ d: gapSec(P.voiceGap) * (0.5 + rng()), F: lastF, av: 0, ah: 0, af: 0, pm: 1, pause: true });
+    this.segs.push({ d: 0.08, V: lastV, av: 0, ah: 0, fr: 0, pm: pm * 0.9 });
+    this.segs.push({ d: gapSec(P.voiceGap) * (0.5 + rng()), V: lastV, av: 0, ah: 0, fr: 0, pm: 1, pause: true });
   }
   nextSeg(P, f0, ratios, lang) {
-    if (!this.segs.length) this.buildPhrase(P, lang);
+    if (!this.segs.length) {
+      // 声道の長さは、句の切れ目でのみ替える
+      const N = clamp(Math.round(24 / (P.voiceTract * this.tractMul)), 14, 36);
+      if (N !== this.tract.N) this.tract.setN(N);
+      this.buildPhrase(P, lang);
+    }
     const s = this.segs.shift();
     this.segLeft += Math.max(16, Math.round(s.d * SR));
-    this.tf = s.F; this.tav = s.av; this.tah = s.ah; this.taf = s.af;
-    this.tbwm = s.nas ? 3 : 1; this.fast = s.fast ? 1 : 0;
-    if (s.fr) this.setFric(s.fr);
+    this.ttx = s.V[0]; this.ttd = s.V[1]; this.tlip = s.V[2];
+    this.tav = s.av; this.tah = s.ah; this.tfr = s.fr;
+    this.tvel = s.vel ? 0.4 : 0.01;
+    if (s.cd !== undefined) { this.cx = s.cx; this.tcd = s.cd; } else this.tcd = 3;
     if (!s.pause) {
       const raw = Math.log2(P.voicePitch * this.pitchMul * s.pm);
       let lt = raw;
@@ -728,10 +895,11 @@ class Speaker {
   render(P, f0, ratios, lang, n, tL, tR, excT, count) {
     const on = this.i < count;
     if (!on && !this.active) return;
-    if (on && !this.active) { this.active = true; this.segs.length = 0; this.segLeft = Math.floor((0.2 + this.rng() * 1.2) * SR); this.tav = this.tah = this.taf = 0; }
-    const tract = P.voiceTract * this.tractMul;
+    if (on && !this.active) {
+      this.active = true; this.segs.length = 0; this.segLeft = Math.floor((0.2 + this.rng() * 1.2) * SR);
+      this.tav = this.tah = this.tfr = 0; this.tcd = 3; this.tvel = 0.01;
+    }
     const br = P.voiceBreath, cons = P.voiceCons;
-    const ktilt = 1 - Math.exp(-2 * Math.PI * 1300 / SR);
     const khp = 1 - Math.exp(-2 * Math.PI * 90 / SR);
     const far = P.voiceFar;
     const kfar = 1 - Math.exp(-2 * Math.PI * (7000 * (1 - far) * (1 - far) + 700) / SR);
@@ -741,59 +909,84 @@ class Speaker {
     const gE1 = P.voiceRes * P.voiceRes * P.voiceLevel * P.voiceLevel * 1.5, dE = (gE1 - this.gE) / n;
     let gE = this.gE;
     const jz = this.jit.step(dt, 7), dz = this.drift.step(dt, 0.4);
-    const FF = [0, 0, 0, 3500, 4500], BW = [80, 100, 160, 250, 320];
-    const A = this.A, B = this.B, C = this.C, y1 = this.y1, y2 = this.y2, fb = this.fb;
+    const tenT = clamp(0.62 - 0.5 * br + 0.06 * this.tw.step(dt, 1.5), 0.05, 0.9);
+    const T = this.tract;
+    // 帯域通過（気息 500Hz、摩擦 1000Hz、いずれも広い）
+    const bp = fc => { const w0 = 2 * Math.PI * fc / SR, al = Math.sin(w0), a0 = 1 + al; return [al / a0, -2 * Math.cos(w0) / a0, (1 - al) / a0]; };
+    const [ab, aa1, aa2] = bp(500), [fb, fa1, fa2] = bp(1000);
+    const an = this.an, fn = this.fn;
 
     for (let i = 0; i < n;) {
       const sub = Math.min(16, n - i);
       this.segLeft -= sub;
       while (this.segLeft <= 0) {
-        if (!on && !this.segs.length) { this.active = false; this.tav = this.tah = this.taf = 0; this.segLeft = SR; break; }
+        if (!on && !this.segs.length) { this.active = false; this.tav = this.tah = this.tfr = 0; this.segLeft = SR; break; }
         this.nextSeg(P, f0, ratios, lang);
       }
-      const kf = 1 - Math.exp(-sub / (SR * (this.fast ? 0.012 : 0.028)));
-      const ka = 1 - Math.exp(-sub / (SR * (this.fast ? 0.005 : 0.011)));
-      const kp = 1 - Math.exp(-sub / (SR * 0.06));
-      for (let q = 0; q < 3; q++) this.f[q] += (this.tf[q] - this.f[q]) * kf;
-      this.bwm += (this.tbwm - this.bwm) * kf;
-      this.av += (this.tav - this.av) * ka; this.ah += (this.tah - this.ah) * ka; this.af += (this.taf - this.af) * ka;
-      this.lp += (this.tlp - this.lp) * kp;
-      FF[0] = this.f[0]; FF[1] = this.f[1]; FF[2] = this.f[2];
-      for (let q = 0; q < 5; q++) {
-        const f = Math.min(FF[q] * tract, SR * 0.45), bw = BW[q] * (q === 1 || q === 2 ? this.bwm : 1);
-        const c = -Math.exp(-2 * Math.PI * bw / SR), b = 2 * Math.exp(-Math.PI * bw / SR) * Math.cos(2 * Math.PI * f / SR);
-        C[q] = c; B[q] = b; A[q] = 1 - b - c;
+      const ka = 1 - Math.exp(-sub / (SR * 0.011));
+      this.av += (this.tav - this.av) * ka; this.ah += (this.tah - this.ah) * ka; this.fr += (this.tfr - this.fr) * ka;
+      if (this.tav === 0 && this.tah === 0 && this.tfr === 0 && this.av < 1e-4 && this.ah < 1e-4 && this.fr < 1e-4) {
+        i += sub; gE += dE * sub; continue;       // 沈黙の間は声道を回さない
       }
-      if (this.tav === 0 && this.tah === 0 && this.taf === 0 && this.av < 1e-5 && this.ah < 1e-5 && this.af < 1e-5) {
-        i += sub; gE += dE * sub; continue;       // 沈黙の間は濾波を回さない
-      }
+      // 調音：舌・唇・狭め・鼻を目標へ寄せ、声道の形を作り直す
+      const km = 1 - Math.exp(-sub / (SR * 0.035)), kc = 1 - Math.exp(-sub / (SR * 0.012));
+      this.tx += (this.ttx - this.tx) * km; this.td += (this.ttd - this.td) * km;
+      this.lip += (this.tlip - this.lip) * km;
+      // 子音を弱めると、閉鎖や狭めが緩む
+      const cdT = this.tcd < 2 ? this.tcd + (1 - cons) * 0.9 : this.tcd;
+      this.cd += (cdT - this.cd) * kc;
+      this.vel += (this.tvel - this.vel) * (1 - Math.exp(-sub / (SR * 0.02)));
+      T.shape(this.tx, this.td, this.lip, this.cx, this.cd, this.vel);
+      this.lp += (this.tlp - this.lp) * (1 - Math.exp(-sub / (SR * 0.06)));
       const dp = Math.pow(2, this.lp) * (1 + 0.012 * jz + 0.02 * dz) / SR;
-      const av = this.av, gV = av * (1 - br), gN = av * br * 1.5 + this.ah * (0.3 + 0.7 * cons) * 0.4 + av * 0.015;
-      const gF = this.af * cons * 0.35;
-      let ph = this.ph, tilt = this.tilt, hp = this.hp, l1 = this.l1, l2 = this.l2;
-      let fx1 = this.fx1, fx2 = this.fx2, fy1 = this.fy1, fy2 = this.fy2;
+      // 乱流：狭めが細く、かつ閉じ切っていない所で起きる。閉鎖が開く瞬間にも一瞬起きる（破裂）
+      const flow = Math.max(this.av * 0.5, this.ah, this.fr);
+      const turb = 0.66 * clamp(8 * (0.7 - this.cd), 0, 1) * clamp(30 * (this.cd - 0.3), 0, 1) * flow * (0.3 + 0.7 * cons);
+      const N = T.N, ci = clamp(Math.floor(this.cx * N), 0, N - 3);
+      const gV = this.av * (1 - br * br), gA = (this.av * (0.04 + 0.6 * br) + this.ah * (0.4 + 0.6 * cons)) * 1.4;
+      const R = T.R, L = T.L, jR = T.jR, jL = T.jL, refl = T.refl, ns = T.ns, noseOn = T.noseOn;
+      const nR = T.nR, nL = T.nL, njR = T.njR, njL = T.njL, nrefl = T.nrefl, NN = T.NN, rl = T.rl, rr = T.rr, rn = T.rn;
+      let gt = this.gt, hp = this.hp, l1 = this.l1, l2 = this.l2;
       for (let k = i; k < i + sub; k++) {
-        ph += dp; if (ph >= 1) ph -= 1;
-        let saw = 2 * ph - 1;
-        if (ph < dp) { const t = ph / dp; saw -= t + t - t * t - 1; }
-        else if (ph > 1 - dp) { const t = (ph - 1) / dp; saw -= t * t + t + t + 1; }
-        tilt += (saw - tilt) * ktilt;
+        // 声門
+        gt += dp;
+        if (gt >= 1) { gt -= 1; this.ten += (tenT - this.ten) * 0.3; this.setWave(this.ten); }
+        const lf = gt > this.wTe ? (-Math.exp(-this.wEps * (gt - this.wTe)) + this.wSh) / this.wD
+                                 : this.wE0 * Math.exp(this.wA * gt) * Math.sin(this.wOm * gt);
         const nz = white();
-        let x = tilt * gV + nz * gN * (0.7 + 0.3 * saw);
-        for (let q = 0; q < 5; q++) {
-          const y = A[q] * x + B[q] * y1[q] + C[q] * y2[q] + 1e-20;
-          y2[q] = y1[q]; y1[q] = y; x = y;
+        const ay = ab * (nz - an[1]) - aa1 * an[2] - aa2 * an[3];
+        an[1] = an[0]; an[0] = nz; an[3] = an[2]; an[2] = ay;
+        const mod = 0.1 + 0.2 * Math.max(0, SIN[(gt * TS) | 0]);           // 声門が開く瞬間に息が強まる
+        const glot = lf * gV * this.loud + ay * gA * (gV > 0.01 ? mod * 3 : 1);
+        // 声道を一歩進める
+        jR[0] = L[0] * 0.75 + glot;
+        jL[N] = R[N - 1] * -0.85;
+        for (let q = 1; q < N; q++) { const w = refl[q] * (R[q - 1] + L[q]); jR[q] = R[q - 1] - w; jL[q] = L[q] + w; }
+        let o = 0;
+        if (noseOn) {
+          jL[ns] = rl * R[ns - 1] + (1 + rl) * (nL[0] + L[ns]);
+          jR[ns] = rr * L[ns] + (1 + rr) * (R[ns - 1] + nL[0]);
+          njR[0] = rn * nL[0] + (1 + rn) * (L[ns] + R[ns - 1]);
+          njL[NN] = nR[NN - 1] * -0.85;
+          for (let q = 1; q < NN; q++) { const w = nrefl[q] * (nR[q - 1] + nL[q]); njR[q] = nR[q - 1] - w; njL[q] = nL[q] + w; }
+          for (let q = 0; q < NN; q++) { nR[q] = njR[q]; nL[q] = njL[q + 1]; }
+          o = nR[NN - 1];
         }
-        const fy = fb[0] * nz + fb[2] * fx2 - fb[3] * fy1 - fb[4] * fy2;
-        fx2 = fx1; fx1 = nz; fy2 = fy1; fy1 = fy;
-        let o = x * 0.22 + fy * gF;
+        for (let q = 0; q < N; q++) { R[q] = jR[q] * 0.999; L[q] = jL[q + 1] * 0.999; }
+        if (turb > 1e-4) {
+          const nz2 = white();
+          const fy = fb * (nz2 - fn[1]) - fa1 * fn[2] - fa2 * fn[3];
+          fn[1] = fn[0]; fn[0] = nz2; fn[3] = fn[2]; fn[2] = fy;
+          const t = fy * turb * 0.5;
+          R[ci + 1] += t; L[ci + 1] += t;
+        }
+        o = (o + R[N - 1]) * 0.9;
         hp += (o - hp) * khp; o -= hp;
         l1 += (o - l1) * kfar; l2 += (l1 - l2) * kfar; o = l2;
         gE += dE;
         tL[k] += o * gl; tR[k] += o * gr; excT[k] += o * gE;
       }
-      this.ph = ph; this.tilt = tilt; this.hp = hp; this.l1 = l1; this.l2 = l2;
-      this.fx1 = fx1; this.fx2 = fx2; this.fy1 = fy1; this.fy2 = fy2;
+      this.gt = gt; this.hp = hp; this.l1 = l1; this.l2 = l2;
       i += sub;
     }
     this.gE = gE1;
@@ -848,14 +1041,23 @@ class Reverb {
   }
 }
 
-/* ---------- 笛：か細い息の笛から、霧の向こうの警笛まで ---------- */
+/* ---------- 笛：管の物理モデル。息の圧が歌口の非線形を越えると鳴り出す ---------- */
+// 太さの低い側はエアリード（フルート、尺八）、高い側はリード（警笛、クラリネット寄り）
+const FBN = 8192, FJN = 4096, FRN = 4096;
 class Flute {
   constructor(rng) {
     this.rng = rng; this.segs = []; this.left = Math.floor((1 + rng() * 3) * SR);
     this.lp = Math.log2(440); this.tlp = this.lp; this.amp = 0; this.tamp = 0;
-    this.ph = 0; this.chiff = 0; this.nx = 0; this.ny = 0;
-    this.pan = 0; this.vph = rng(); this.vw = new Wander(rng); this.dw = new Wander(rng); this.aw = new Wander(rng);
+    this.pan = 0; this.vph = rng(); this.vw = new Wander(rng); this.dw = new Wander(rng);
     this.l1 = 0; this.l2 = 0; this.gE = 0; this.idx = -1;
+    // エアリードの管
+    this.bore = new Float32Array(FBN); this.jet = new Float32Array(FJN); this.bw = 0; this.jw = 0;
+    this.bd = 100; this.jd = 30; this.blast = 0; this.flp = 0; this.dx = 0; this.dy = 0;
+    // リードの管
+    this.rb = new Float32Array(FRN); this.rw = 0; this.rd = 50; this.rlast = 0; this.rz = 0;
+    // 息の雑音（管の外へ漏れる分）
+    this.nx = 0; this.ny = 0; this.chiff = 0;
+    this.wj = 1; this.quiet = 0; this.vel = 1; this.tvel = 1;
   }
   build(P, f0, ratios) {
     const rng = this.rng, lad = ladder(f0, ratios, P.flutePitch, P.fluteRange * 1.5);
@@ -863,15 +1065,15 @@ class Flute {
     if (this.idx < 0 || this.idx >= lad.length || rng() < 0.4) this.idx = Math.floor(rng() * lad.length);
     for (let i = 0; i < n; i++) {
       const d = P.fluteLen * (0.6 + rng() * 0.8) * (i === n - 1 ? 1.4 : 1);
-      this.segs.push({ d, lp: lad[this.idx], a: 0.7 + 0.3 * rng() });
+      this.segs.push({ d, lp: lad[this.idx], a: 1, vel: 0.75 + 0.25 * rng() });
       this.idx = walk(rng, this.idx, lad.length);
-      if (i < n - 1 && rng() > P.fluteGlide) this.segs.push({ d: 0.04 + 0.1 * rng(), a: 0 });   // 吹き直し
+      if (i < n - 1 && rng() > P.fluteGlide) this.segs.push({ d: 0.05 + 0.1 * rng(), a: 0 });   // 吹き直し
     }
     this.segs.push({ d: gapSec(P.fluteGap) * (0.5 + rng()), a: 0, pause: true });
     this.pan = (rng() * 2 - 1) * P.flutePan;
   }
   render(P, f0, ratios, n, tL, tR, excT) {
-    const dt = n / SR, body = P.fluteBody;
+    const dt = n / SR, body = P.fluteBody, br = P.fluteBreath;
     this.left -= n;
     while (this.left <= 0) {
       if (!this.segs.length) this.build(P, f0, ratios);
@@ -879,60 +1081,131 @@ class Flute {
       this.left += Math.max(n, Math.round(s.d * SR));
       this.tamp = s.a;
       if (s.a > 0) {
-        this.tlp = s.lp;
+        this.tlp = s.lp; this.tvel = s.vel;
         if (this.amp < 0.03) this.lp = s.lp;       // 無音からの吹き始めは滑らせない
         this.chiff = 1;
       }
     }
     this.lp += (this.tlp - this.lp) * (1 - Math.exp(-dt / (0.008 + P.fluteGlide * 0.3)));
     const rise = this.tamp > this.amp;
-    const a1 = this.amp + (this.tamp - this.amp) * (1 - Math.exp(-dt / (rise ? 0.02 + 0.3 * body : 0.05 + 0.4 * body)));
+    const a1 = this.amp + (this.tamp - this.amp) * (1 - Math.exp(-dt / (rise ? 0.03 + 0.3 * body : 0.06 + 0.4 * body)));
     const gE1 = P.fluteRes * P.fluteRes * P.fluteLevel * P.fluteLevel;
-    if (a1 < 1e-5 && this.amp < 1e-5) { this.amp = a1; this.gE = gE1; return; }
+    if (a1 < 1e-4 && this.amp < 1e-4) {
+      // 息が止まっても管はしばらく鳴り残る。静まり切ったら計算を省く
+      if (++this.quiet > 0.6 * SR / n) { this.amp = a1; this.gE = gE1; return; }
+    } else this.quiet = 0;
+
+    // 音高：ビブラートと僅かな揺らぎ
     this.vph += (4.6 + 1.2 * this.vw.step(dt, 0.5)) * dt; this.vph -= Math.floor(this.vph);
-    const vib = Math.sin(2 * Math.PI * this.vph) * P.fluteVib * 0.03 + this.dw.step(dt, 0.3) * 0.004;
-    const f = Math.min(Math.pow(2, this.lp + vib), SR * 0.3), inc = f / SR;
-    const beta = body * 1.7 / (2 * Math.PI);
-    const trem = 1 + 0.12 * this.aw.step(dt, 3) * (0.3 + P.fluteBreath);
-    // 息：音高のまわりに絞った雑音。吹き始めに一瞬強まる
+    const vs = Math.sin(2 * Math.PI * this.vph) * P.fluteVib;
+    const f = clamp(Math.pow(2, this.lp + vs * 0.012 + this.dw.step(dt, 0.3) * 0.003), 18, 5000);
+    const T = SR / f, w = 2 * Math.PI * f / SR;
+
+    // 歌口の型の割合
+    const wj1 = clamp((0.6 - body) / 0.15, 0, 1);
+    const wj0 = this.wj, dwj = (wj1 - wj0) / n;
+    const useJ = wj0 > 1e-3 || wj1 > 1e-3, useR = wj0 < 0.999 || wj1 < 0.999;
+
+    // 息の圧。閾を下回れば、鳴らずに息だけが漏れる
+    const pvib = 1 + vs * 0.05;
+    const pj = (1.06 - 0.215 * Math.pow(br, 1.5)) * pvib, nj = 0.05 + 0.25 * br;
+    const pr = (0.88 - 0.24 * br) * pvib, nr = 0.05 + 0.2 * br;
+
+    // エアリード：管を一往復半して歌口へ戻る。輪の中の濾波と直流除去の位相を差し引いて調律する
+    const cr = 2.2 + 7 * Math.min(body, 0.6);
+    const pole = Math.exp(-2 * Math.PI * clamp(cr * f, 200, 9000) / SR), DCR = 0.9993;
+    const pd1 = Math.atan2(pole * Math.sin(w), 1 - pole * Math.cos(w)) / w;
+    const lead = (Math.atan2(Math.sin(w), 1 - Math.cos(w)) - Math.atan2(DCR * Math.sin(w), 1 - DCR * Math.cos(w))) / w;
+    const bd1 = clamp(1.5 * T - pd1 + lead - 0.75 + 0.0113 * T, 2, FBN - 2), jd1 = clamp(0.48 * T, 1, FJN - 2);
+    const rd1 = clamp(0.5 * T - 1.5, 1, FRN - 2);
+    const dbd = (bd1 - this.bd) / n, djd = (jd1 - this.jd) / n, drd = (rd1 - this.rd) / n;
+    const slope = -0.3;       // リードの硬さ。これより硬いと、息の圧でリードが閉じ切って鳴らない
+
+    // 管の外へ漏れる息：音高のまわりに絞った雑音。吹き始めに一瞬強まる
     this.chiff *= Math.exp(-dt / 0.06);
-    const r = Math.exp(-Math.PI * (f / 5 + 60) / SR), th = 2 * Math.PI * f / SR;
-    const c = r * Math.cos(th), sn = r * Math.sin(th);
-    const gn = Math.sqrt(2 * (1 - r)) * P.fluteBreath * (0.9 + 2.2 * this.chiff);
-    const gt = 1 - 0.45 * P.fluteBreath;
+    const r = Math.exp(-Math.PI * (f / 5 + 60) / SR), c = r * Math.cos(w), sn = r * Math.sin(w);
+    const gn = Math.sqrt(2 * (1 - r)) * br * (0.7 + 1.8 * this.chiff) * wj1 + Math.sqrt(2 * (1 - r)) * br * 0.3 * (1 - wj1);
+
     const far = P.fluteFar, kfar = 1 - Math.exp(-2 * Math.PI * (9000 * (1 - far) * (1 - far) + 600) / SR);
-    const gl = panL(this.pan) * 0.3, gr = panR(this.pan) * 0.3;
+    this.vel += (this.tvel - this.vel) * (1 - Math.exp(-dt / 0.05));       // 音ごとの強さは、息の圧ではなく出口の音量に掛ける
+    const gl = panL(this.pan) * this.vel, gr = panR(this.pan) * this.vel;
     const da = (a1 - this.amp) / n, dE = (gE1 - this.gE) / n;
-    let a = this.amp, gE = this.gE, p = this.ph, nx = this.nx, ny = this.ny, l1 = this.l1, l2 = this.l2;
+    const bore = this.bore, jet = this.jet, rb = this.rb;
+    let a = this.amp, gE = this.gE, wj = wj0, l1 = this.l1, l2 = this.l2, nx = this.nx, ny = this.ny;
+    let bw = this.bw, jw = this.jw, bd = this.bd, jd = this.jd, blast = this.blast, flp = this.flp, dx = this.dx, dy = this.dy;
+    let rw = this.rw, rd = this.rd, rlast = this.rlast, rz = this.rz;
     for (let k = 0; k < n; k++) {
-      p += inc; if (p >= 1) p -= 1;
-      let x = p * TS, j = x | 0;
-      const s1 = SIN[j] + (SIN[j + 1] - SIN[j]) * (x - j);
-      let q = p + beta * s1; q -= Math.floor(q);            // 自己変調で倍音を足す（太さ）
-      x = q * TS; j = x | 0;
-      const s2 = SIN[j] + (SIN[j + 1] - SIN[j]) * (x - j);
-      const t = c * nx - sn * ny + white() * gn + 1e-20;
-      ny = sn * nx + c * ny; nx = t;
-      a += da; gE += dE;
-      let o = (s2 * gt + ny) * a * trem;
+      a += da; gE += dE; wj += dwj;
+      const nz = white();
+      let o = 0;
+      if (useJ) {
+        bd += dbd; jd += djd;
+        const breath = a * pj * (1 + nj * nz);
+        flp = (1 - pole) * blast + pole * flp;
+        let t = -flp;
+        const y = t - dx + DCR * dy; dx = t; dy = y; t = y;
+        // 噴流の遅延
+        jet[jw] = breath - 0.5 * t;
+        let p = jw - jd; if (p < 0) p += FJN; if (p >= FJN) p = 0;
+        let i = p | 0, j = i + 1 >= FJN ? 0 : i + 1;
+        let x = jet[i] + (jet[j] - jet[i]) * (p - i);
+        if (++jw >= FJN) jw = 0;
+        x = x * (x * x - 1); if (x > 1) x = 1; else if (x < -1) x = -1;        // 噴流が歌口の縁を行き来する非線形
+        // 管
+        bore[bw] = x + 0.5 * t + 1e-20;
+        p = bw - bd; if (p < 0) p += FBN; if (p >= FBN) p = 0;
+        i = p | 0; j = i + 1 >= FBN ? 0 : i + 1;
+        blast = bore[i] + (bore[j] - bore[i]) * (p - i);
+        if (++bw >= FBN) bw = 0;
+        o += blast * 0.32 * wj;
+      }
+      if (useR) {
+        rd += drd;
+        const breath = a * pr * (1 + nr * nz);
+        const fz = 0.5 * (rlast + rz); rz = rlast;
+        const pd = -0.95 * fz - breath;
+        let rt = 0.7 + slope * pd; if (rt > 1) rt = 1; else if (rt < -1) rt = -1;     // リードの開き
+        rb[rw] = breath + pd * rt + 1e-20;
+        let p = rw - rd; if (p < 0) p += FRN; if (p >= FRN) p = 0;
+        const i = p | 0, j = i + 1 >= FRN ? 0 : i + 1;
+        rlast = rb[i] + (rb[j] - rb[i]) * (p - i);
+        if (++rw >= FRN) rw = 0;
+        o += rlast * 0.45 * (1 - wj);
+      }
+      const t2 = c * nx - sn * ny + nz * gn * a + 1e-20;
+      ny = sn * nx + c * ny; nx = t2;
+      o += ny * 0.45;
       l1 += (o - l1) * kfar; l2 += (l1 - l2) * kfar; o = l2;
       tL[k] += o * gl; tR[k] += o * gr; excT[k] += o * gE * 0.5;
     }
-    this.amp = a1; this.gE = gE1; this.ph = p; this.nx = nx; this.ny = ny; this.l1 = l1; this.l2 = l2;
+    this.amp = a1; this.gE = gE1; this.wj = wj1; this.l1 = l1; this.l2 = l2; this.nx = nx; this.ny = ny;
+    this.bw = bw; this.jw = jw; this.bd = bd1; this.jd = jd1; this.blast = blast; this.flp = flp; this.dx = dx; this.dy = dy;
+    this.rw = rw; this.rd = rd1; this.rlast = rlast; this.rz = rz;
   }
 }
 
-/* ---------- 鐘：FM 合成。打った瞬間に濁り、次第に澄む ---------- */
-// 材質のつまみが渡る、変調と搬送の周波数比。整数から外れた比が金属の響きを生む
-const BELL_M = [3.53, 2.76, 1.41, 0.71];        // チャイム → 鉄琴 → 洋鐘 → 銅鑼・梵鐘寄り
-const BO = 3;        // 一打あたりの FM の組：胴二つ（隣り合う材質を混ぜる）＋打撃音一つ
+/* ---------- 鐘：モーダル合成。物体の振動の型を一つずつ鳴らす ---------- */
+// r=型の周波数比（1 が鳴らす音高） a=強さ p=高い型ほど早く消える度合い dbl=うなりの対の出やすさ
+const BELL_T = [
+  { r: [1, 2.756, 5.404, 8.933, 13.345, 18.64, 24.81],                     // 棒・チャイム
+    a: [1, 0.7, 0.5, 0.35, 0.25, 0.16, 0.1], p: 0.55, dbl: 0.2 },
+  { r: [1, 2.71, 4.95, 7.7, 10.9, 14.5],                                    // 椀・お鈴
+    a: [1, 0.6, 0.4, 0.25, 0.15, 0.1], p: 0.7, dbl: 1 },
+  { r: [0.5, 1, 1.2, 1.5, 2, 2.5, 2.67, 3, 4, 5.33, 6.67],                  // 洋鐘（ハム・基音・短三度・五度・オクターブ…）
+    a: [0.6, 1, 0.7, 0.45, 0.8, 0.4, 0.3, 0.45, 0.35, 0.22, 0.15], p: 0.85, dbl: 0.5 },
+  { r: [1, 2.3, 3.86, 5.5, 7.4, 9.4, 11.6],                                 // 梵鐘
+    a: [1, 0.75, 0.55, 0.4, 0.3, 0.2, 0.14], p: 1.05, dbl: 1 },
+  { r: [1, 1.59, 2.14, 2.65, 2.92, 3.5, 4.06, 4.6, 5.21, 5.9, 6.7, 7.6],    // 板・銅鑼
+    a: [1, 0.9, 0.8, 0.72, 0.65, 0.58, 0.5, 0.45, 0.4, 0.34, 0.3, 0.25], p: 0.5, dbl: 0.4 },
+];
+const BM = 34;       // 一打あたりの型の上限（隣り合う二つの材質＋うなりの対）
 class Bell {
   constructor(rng) {
     this.rng = rng; this.q = []; this.left = Math.floor((1 + rng() * 4) * SR); this.idx = -1; this.pan = 0;
     this.v = [];
-    const f = () => new Float64Array(BO);
-    for (let i = 0; i < 6; i++) this.v.push({ on: false, pc: f(), pm: f(), ic: f(), im: f(), ix: f(), dx: f(), is: f(), am: f(), da: f() });
-    this.m = new Float32Array(128); this.fl = [0, 0, 0, 0]; this.gE = 0;
+    const f = () => new Float64Array(BM);
+    for (let i = 0; i < 6; i++) this.v.push({ on: false, n: 0, xr: f(), xi: f(), cr: f(), ci: f(), e: 0 });
+    this.m = new Float32Array(128); this.fl = [0, 0, 0, 0];
   }
   build(P, f0, ratios) {
     const rng = this.rng, lad = ladder(f0, ratios, P.bellPitch, P.bellRange * 1.5);
@@ -947,30 +1220,37 @@ class Bell {
   }
   strike(P, lp, vel) {
     let v = this.v.find(x => !x.on);
-    if (!v) { v = this.v[0]; for (const x of this.v) if (x.am[0] + x.am[1] < v.am[0] + v.am[1]) v = x; }
-    const rng = this.rng, hard = P.bellHard, beat = P.bellBeat;
-    const x = Math.min(P.bellTimbre * 3, 2.9999), si = x | 0, fr = x - si;
-    const f = Math.pow(2, lp), dec = P.bellDecay;
-    const idx0 = (1 + 8 * Math.pow(hard, 1.5)) * (0.75 + 0.25 * vel);
-    // [搬送の比, 変調の比（搬送に対して）, 音量, 余韻, 変調の深さ, 深さの余韻]
-    const ops = [
-      [1, BELL_M[si], Math.cos(fr * Math.PI / 2), dec, idx0, dec * 0.3],
-      [1 + beat * 0.0025 * (0.5 + rng()), BELL_M[si + 1], Math.sin(fr * Math.PI / 2), dec, idx0, dec * 0.3],
-      [2.99, 1.41, 0.2 + 0.5 * hard, Math.min(0.7, dec * 0.12) + 0.05, idx0 * 1.3 + 1, 0.12],     // 打撃の濁り。すぐ消える
-    ];
-    for (let i = 0; i < BO; i++) {
-      const [cr, mr, lv, t60, ix, tix] = ops[i];
-      const fc = f * cr, fm = fc * mr * (1 + beat * 0.003 * (rng() - 0.5));
-      // 折り返し雑音を避けるため、高い音では変調を浅くする
-      const imax = Math.max(0, (SR * 0.42 - fc) / fm - 1);
-      const I = Math.min(ix, imax);
-      v.ic[i] = fc / SR; v.im[i] = fm / SR; v.pc[i] = 0; v.pm[i] = 0;
-      v.ix[i] = I * 0.85 / (2 * Math.PI); v.is[i] = I * 0.15 / (2 * Math.PI);      // 一部は消えずに残り、余韻にも金属味を保つ
-      v.dx[i] = Math.exp(-LN1000 / (clamp(tix, 0.03, 60) * SR));
-      v.am[i] = fc < SR * 0.42 ? lv * 0.4 * vel : 0;
-      v.da[i] = Math.exp(-LN1000 / (clamp(t60, 0.05, 60) * SR));
+    if (!v) { v = this.v[0]; for (const x of this.v) if (x.e < v.e) v = x; }      // 最も静まったものを奪う
+    const rng = this.rng, hard = P.bellHard, beat = P.bellBeat, dec = P.bellDecay;
+    const x = Math.min(P.bellTimbre * (BELL_T.length - 1), BELL_T.length - 1.0001), si = x | 0, fr = x - si;
+    const f = Math.pow(2, lp);
+    // 撞木の硬さ：柔らかいほど触れている時間が長く、高い型を揺り起こせない
+    const fc = f * (1.2 + 30 * hard * hard);
+    let n = 0, sumsq = 0;
+    const add = (fq, amp, t60) => {
+      if (n >= BM || fq > SR * 0.45 || amp < 0.002) return;
+      const r = Math.exp(-LN1000 / (clamp(t60, 0.03, 60) * SR)), th = 2 * Math.PI * fq / SR;
+      v.cr[n] = r * Math.cos(th); v.ci[n] = r * Math.sin(th); v.xr[n] = amp; v.xi[n] = 0;
+      sumsq += amp * amp; n++;
+    };
+    for (let t = 0; t < 2; t++) {
+      const T = BELL_T[si + t], wt = t ? Math.sin(fr * Math.PI / 2) : Math.cos(fr * Math.PI / 2);
+      if (wt < 0.06) continue;
+      for (let i = 0; i < T.r.length; i++) {
+        const fq = f * T.r[i], q = fq / fc;
+        const amp = T.a[i] * wt / (1 + q * q) * (0.7 + 0.6 * rng());            // 打つ場所で型の出方は毎回変わる
+        const t60 = dec * Math.pow(T.r[i], -T.p);
+        // 低い型は僅かにずれた対を持ち、うなる
+        if (i < 4 && beat * T.dbl > 0.02) {
+          add(fq, amp * 0.72, t60);
+          add(fq * (1 + beat * T.dbl * 0.0045 * (0.4 + rng())), amp * 0.5, t60 * 0.93);
+        } else add(fq, amp, t60);
+      }
     }
-    v.on = true; v.attLen = Math.round((0.001 + (1 - hard) * 0.012) * SR); v.att = 0;
+    const nrm = 0.3 * vel / Math.sqrt(sumsq || 1);
+    for (let i = 0; i < n; i++) v.xr[i] *= nrm;
+    v.n = n; v.on = n > 0; v.e = 1;
+    v.att = 0; v.attLen = Math.round((0.0005 + (1 - hard) * 0.008) * SR);       // 撞木が触れている時間
     v.gl = panL(this.pan + (rng() - 0.5) * 0.3 * P.bellPan); v.gr = panR(this.pan + (rng() - 0.5) * 0.3 * P.bellPan);
   }
   render(P, f0, ratios, n, tL, tR, excT) {
@@ -985,35 +1265,35 @@ class Bell {
     const m = this.m, gE = P.bellRes * P.bellRes * P.bellLevel * P.bellLevel * 0.5;
     const far = P.bellFar, kfar = 1 - Math.exp(-2 * Math.PI * (10000 * (1 - far) * (1 - far) + 700) / SR);
     const fl = this.fl;
+    let any = false;
     for (const v of this.v) {
       if (!v.on) continue;
+      any = true;
       m.fill(0, 0, n);
-      let alive = false;
-      for (let i = 0; i < BO; i++) {
-        let a = v.am[i];
-        if (a < 2e-5) continue;
-        alive = true;
-        const ic = v.ic[i], im = v.im[i], da = v.da[i], dx = v.dx[i], is = v.is[i];
-        let pc = v.pc[i], pm = v.pm[i], ix = v.ix[i];
+      let e = 0, w = 0;
+      for (let i = 0; i < v.n; i++) {
+        let xr = v.xr[i], xi = v.xi[i];
+        const a2 = xr * xr + xi * xi;
+        if (a2 < 1e-9) continue;                 // 消えた型は捨てる
+        const cr = v.cr[i], ci = v.ci[i];
         for (let k = 0; k < n; k++) {
-          let x = pm * TS, j = x | 0;
-          const sm = SIN[j] + (SIN[j + 1] - SIN[j]) * (x - j);
-          let q = pc + (ix + is) * sm; q -= Math.floor(q);
-          x = q * TS; j = x | 0;
-          m[k] += (SIN[j] + (SIN[j + 1] - SIN[j]) * (x - j)) * a;
-          a *= da; ix *= dx;
-          pc += ic; if (pc >= 1) pc -= 1;
-          pm += im; if (pm >= 1) pm -= 1;
+          const t = xr * cr - xi * ci;
+          xi = xr * ci + xi * cr; xr = t;
+          m[k] += xi;
         }
-        v.am[i] = a; v.ix[i] = ix; v.pc[i] = pc; v.pm[i] = pm;
+        e += a2;
+        v.xr[w] = xr; v.xi[w] = xi; v.cr[w] = cr; v.ci[w] = ci; w++;
       }
-      if (!alive) { v.on = false; continue; }
+      v.n = w; v.e = e;
+      if (!w) { v.on = false; continue; }
+      const gl = v.gl, gr = v.gr;
       for (let k = 0; k < n; k++) {
         let o = m[k];
-        if (v.att < v.attLen) o *= ++v.att / v.attLen;
-        tL[k] += o * v.gl; tR[k] += o * v.gr; excT[k] += o * gE;
+        if (v.att < v.attLen) { const u = ++v.att / v.attLen; o *= u * u * (3 - 2 * u); }
+        tL[k] += o * gl; tR[k] += o * gr; excT[k] += o * gE;
       }
     }
+    if (!any && Math.abs(fl[1]) + Math.abs(fl[3]) < 1e-7) return;
     for (let k = 0; k < n; k++) {              // 遠さ：高域を落とす
       fl[0] += (tL[k] - fl[0]) * kfar; fl[1] += (fl[0] - fl[1]) * kfar; tL[k] = fl[1];
       fl[2] += (tR[k] - fl[2]) * kfar; fl[3] += (fl[2] - fl[3]) * kfar; tR[k] = fl[3];

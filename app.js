@@ -305,8 +305,9 @@ const TABS = [
   { id: 'front', label: '表' },
   { id: 'drone', label: 'ドローン', ids: ['droneLevel', ...secIds('drone'), 'droneEcho'] },
   { id: 'noise', label: 'ノイズ', pages: [
-    { label: '素材', ids: ['noiseLevel', 'noisePitch', 'noiseColor', 'noiseCrackle', 'noiseDensity', 'noiseFlutter', 'noiseHum',
+    { label: '素材', ids: ['noiseLevel', 'noisePitch', 'noiseBase', 'noiseColor', 'noiseFlutter', 'noiseHum',
       'noiseCrush', 'noiseSwell', 'noiseSwellT', 'noiseWidth', 'noiseRes', 'noiseEcho'] },
+    { label: '事象', ids: secIds('noise3') },
     { label: '加工', ids: secIds('noise2') },
   ] },
   { id: 'res',   label: 'RES', ids: ['resLevel', ...secIds('res'), 'resEcho'] },
