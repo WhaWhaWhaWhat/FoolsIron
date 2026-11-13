@@ -1464,6 +1464,7 @@ class FoolsIron extends AudioWorkletProcessor {
     this.bq = [0, 0, 0, 0, 0, 0, 0, 0];     // 主低域通過の状態 (x1,x2,y1,y2)×2
     this.dc = [0, 0, 0, 0];
     this.sw = 1;
+    this.mt = null;          // 開発用の計器。各部の音量を個別に測る（tools/render.mjs が使う）
     this.seed(1);
     this.port.onmessage = e => this.onMsg(e.data);
   }
@@ -1489,6 +1490,7 @@ class FoolsIron extends AudioWorkletProcessor {
   }
   onMsg(m) {
     if (m.type === 'seed') this.seed(m.seed);
+    if (m.type === 'meter') this.mt = { st: new Float64Array(NP * 2), sum: new Float64Array(NP), act: new Float64Array(NP), nAct: new Float64Array(NP), blocks: 0 };
     if (m.values) {
       const glide = Math.max(0.03, m.glide || 0.06), blocks = glide * SR / 128;
       for (const [id, v] of Object.entries(m.values)) {
@@ -1536,11 +1538,27 @@ class FoolsIron extends AudioWorkletProcessor {
       P[cont[i].id] = denorm(cont[i], clamp(cur[i] + off[i], 0, 1));
     }
   }
+  tap(i, sL, sR, n, g, send) {
+    const mt = this.mt, P = this.P;
+    const w0 = 2 * Math.PI * Math.min(P.tone, SR * 0.45) / SR, al = Math.sin(w0) / 1.41421356, cs = Math.cos(w0), a0 = 1 + al;
+    const b0 = (1 - cs) / 2 / a0, b1 = (1 - cs) / a0, a1 = -2 * cs / a0, a2 = (1 - al) / a0;
+    const wet = send * P.space * P.space * Math.pow(6 / P.spaceDecay, 0.35) * Math.sqrt(P.spaceDecay) * 0.6;
+    const ge = g * Math.sqrt(1 + wet * wet) * 0.75;
+    let z1 = mt.st[i * 2], z2 = mt.st[i * 2 + 1], e = 0;
+    for (let k = 0; k < n; k++) {
+      const x = (sL[k] + sR[k]) * 0.5 * ge, y = b0 * x + z1;
+      z1 = b1 * x - a1 * y + z2; z2 = b0 * x - a2 * y; e += y * y;
+    }
+    mt.st[i * 2] = z1; mt.st[i * 2 + 1] = z2;
+    e /= n; mt.sum[i] += e;
+    if (e > 3e-8) { mt.act[i] += e; mt.nAct[i]++; }
+  }
   process(_, outputs) {
     const out = outputs[0], oL = out[0], oR = out[1] || out[0], n = oL.length;
     if (n > this.bn) this.mk(n);
     this.updateParams(n);
     const { P, S, tL, tR, dL, dR, wL, wR, eN, eT, xL, xR, g, es, dub } = this;
+    if (this.mt) this.mt.blocks++;
     const sk = S.scale + '|' + S.temper;
     if (sk !== this.scaleKey) { this.scaleKey = sk; this.ratios = scaleRatios(S.scale, S.temper); }
     const ratios = this.ratios;
@@ -1563,6 +1581,7 @@ class FoolsIron extends AudioWorkletProcessor {
       this.drone.render(P, S, f0 * Math.pow(2, P.dronePitch / 12), n, tL, tR);
       this.phD.process(P, n, tL, tR);
       mixTo(n, tL, tR, g.drone, t, dL, dR, 0.35, wL, wR, es[0], e, xL, xR);
+      if (this.mt) this.tap(0, tL, tR, n, t, 0.35);
     }
     g.drone = t; es[0] = e;
 
@@ -1573,6 +1592,7 @@ class FoolsIron extends AudioWorkletProcessor {
       this.noise.render(P, S, f0, ratios, n, tL, tR, eN);
       this.phN.process(P, n, tL, tR);
       mixTo(n, tL, tR, g.noise, t, dL, dR, 0.12, wL, wR, es[1], e, xL, xR);
+      if (this.mt) this.tap(1, tL, tR, n, t, 0.12);
     }
     g.noise = t; es[1] = e;
 
@@ -1581,6 +1601,7 @@ class FoolsIron extends AudioWorkletProcessor {
       tL.fill(0); tR.fill(0);
       this.arp.render(P, S, f0, ratios, n, tL, tR, eT);
       mixTo(n, tL, tR, g.arp, t, dL, dR, 0.9, wL, wR, es[3], e, xL, xR);
+      if (this.mt) this.tap(3, tL, tR, n, t, 0.9);
     }
     g.arp = t; es[3] = e;
 
@@ -1591,6 +1612,7 @@ class FoolsIron extends AudioWorkletProcessor {
       for (const sp of this.speakers) sp.render(P, f0, ratios, this.lang, n, tL, tR, eT, cnt);
       const far = P.voiceFar, dry = 1 - 0.7 * far;
       mixTo(n, tL, tR, g.voice * dry, t * dry, dL, dR, (0.4 + 1.0 * far) / dry, wL, wR, es[4], e, xL, xR);
+      if (this.mt) this.tap(4, tL, tR, n, t * dry, (0.4 + 1.0 * far) / dry);
     }
     g.voice = t; es[4] = e;
 
@@ -1601,6 +1623,7 @@ class FoolsIron extends AudioWorkletProcessor {
         tL.fill(0); tR.fill(0);
         part.render(P, f0, ratios, n, tL, tR, eT);
         mixTo(n, tL, tR, g[key] * dry, t * dry, dL, dR, (0.4 + 1.0 * far) / dry, wL, wR, es[i], e, xL, xR);
+        if (this.mt) this.tap(i, tL, tR, n, t * dry, (0.4 + 1.0 * far) / dry);
       }
       g[key] = t; es[i] = e;
     }
@@ -1611,6 +1634,7 @@ class FoolsIron extends AudioWorkletProcessor {
       tL.fill(0); tR.fill(0);
       this.res.render(P, f0, ratios, n, eN, eT, tL, tR);
       mixTo(n, tL, tR, g.res, t, dL, dR, 0.7, wL, wR, es[2], e, xL, xR);
+      if (this.mt) this.tap(2, tL, tR, n, t, 0.7);
     }
     g.res = t; es[2] = e;
 

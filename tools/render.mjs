@@ -11,6 +11,7 @@ await import('../engine.js');
 
 export function render(values, seed, secs, hook) {
   const p = new Proc();
+  p.port.onmessage({ data: { type: 'meter' } });
   p.port.onmessage({ data: { type: 'seed', seed } });
   p.port.onmessage({ data: { values, snap: true } });
   const blocks = Math.ceil(secs * SR / 128), L = new Float32Array(blocks * 128), R = new Float32Array(blocks * 128);
@@ -19,7 +20,12 @@ export function render(values, seed, secs, hook) {
     if (hook) hook(p, b * 128 / SR);
     p.process([], [[L.subarray(b * 128, b * 128 + 128), R.subarray(b * 128, b * 128 + 128)]]);
   }
-  return { L, R, speed: secs / ((performance.now() - t0) / 1000) };
+  // 各部の釣り合い：鳴っている間の音量(dB)と、鳴っている時間の割合
+  const mt = p.mt, db = x => 10 * Math.log10(x + 1e-12), parts = {};
+  ['ドローン', 'ノイズ', 'RES', 'ARP', '声', '笛', '鐘'].forEach((nm, i) => {
+    if (mt.nAct[i]) parts[nm] = { on: +db(mt.act[i] / mt.nAct[i]).toFixed(1), duty: +(mt.nAct[i] / mt.blocks).toFixed(2) };
+  });
+  return { L, R, parts, speed: secs / ((performance.now() - t0) / 1000) };
 }
 export function stats(L, R, from = 0) {
   let s = 0, pk = 0, bad = 0, c = 0, sl = 0, sr = 0;
@@ -54,5 +60,6 @@ if (process.argv[1].endsWith('render.mjs')) {
   const { values, seed } = preset(name, extra);
   const r = render(values, seed, +secs);
   console.log(name, stats(r.L, r.R, SR * 3), '実時間比 ×' + r.speed.toFixed(0));
+  console.log('  部ごと（鳴っている間の dB / 鳴っている時間の割合）:', Object.entries(r.parts).map(([k, v]) => `${k} ${v.on}/${v.duty}`).join('  '));
   if (out) wav(out, r.L, r.R);
 }
