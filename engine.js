@@ -269,7 +269,7 @@ class Noise {
     if (bg > 1e-4 || this.bbOn) {
       const q = this.bb, size = P.noiseBubbleSize;
       const pd = bg > 1e-4 ? P.noiseBubbleRate / SR : 0;
-      const lvl = bg * 0.6 * Math.min(1, Math.pow(40 / P.noiseBubbleRate, 0.4));
+      const lvl = bg * 0.9 * Math.min(1, Math.pow(40 / P.noiseBubbleRate, 0.4));
       let e = 0;
       for (let k = 0; k < n; k++) {
         const u = white();
@@ -1341,7 +1341,7 @@ class Echo {
     this.N = Math.ceil(SR * 2.4);
     this.bL = new Float32Array(this.N); this.bR = new Float32Array(this.N);
     this.w = 0; this.d = 0.38 * SR;
-    this.lp = [0, 0]; this.hp = [0, 0]; this.wph = 0; this.fph = 0; this.idle = true;
+    this.lp = [0, 0]; this.hp = [0, 0]; this.wph = 0; this.fph = 0; this.idle = true; this.sdl = 0;
   }
   process(P, n, inL, inR, outL, outR, wL, wR, g0, g1, fbExtra) {
     if (g0 < 1e-5 && g1 < 1e-5) { this.idle = true; return; }
@@ -1353,7 +1353,8 @@ class Echo {
     const kh = 1 - Math.exp(-2 * Math.PI * 130 / SR);
     const wow = P.echoWow, dg = (g1 - g0) / n;
     let g = g0, w = this.w, d = this.d, wph = this.wph, fph = this.fph;
-    let lpL = this.lp[0], lpR = this.lp[1], hpL = this.hp[0], hpR = this.hp[1];
+    let lpL = this.lp[0], lpR = this.lp[1], hpL = this.hp[0], hpR = this.hp[1], sdl = this.sdl;
+    const ksd = 1 - Math.exp(-2 * Math.PI * 300 / SR);
     for (let k = 0; k < n; k++) {
       d += (dt - d) * kd;                         // 長さを変えると、テープのように音高が滑る
       wph += 0.55 / SR; if (wph >= 1) wph -= 1;
@@ -1371,12 +1372,16 @@ class Echo {
       bR[w] = ir * (1 - ping) + fb * (sr * (1 - ping) + sl * ping) + 1e-20;
       if (++w >= N) w = 0;
       g += dg;
-      const ol = yl * g * 0.7, or = yr * g * 0.7;
+      // 低域は左右の差を落とす。低い持続音が左右で逆相に寄ると、単一スピーカーで痩せるため
+      const em = (yl + yr) * 0.5;
+      let es = (yl - yr) * 0.5;
+      sdl += (es - sdl) * ksd; es -= sdl;
+      const ol = (em + es) * g * 0.7, or = (em - es) * g * 0.7;
       outL[k] += ol; outR[k] += or;
       wL[k] += ol * 0.3; wR[k] += or * 0.3;
     }
     this.w = w; this.d = d; this.wph = wph; this.fph = fph;
-    this.lp[0] = lpL; this.lp[1] = lpR; this.hp[0] = hpL; this.hp[1] = hpR;
+    this.lp[0] = lpL; this.lp[1] = lpR; this.hp[0] = hpL; this.hp[1] = hpR; this.sdl = sdl;
   }
 }
 
