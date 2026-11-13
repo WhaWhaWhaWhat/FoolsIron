@@ -541,6 +541,7 @@ $('play').onclick = () => { if (ctx) stop(); else start(); };
     apply({ name: String(last.name || '無題'), seed: (last.seed | 0) || 1, p: last.p }, src, 0);
     if (last.dirty && src !== 'x') { state.dirty = true; showHead(); }
   } else {
-    apply(FACTORY[0], 'f:0', 0);
+    const i = Math.max(0, FACTORY.findIndex(p => p.name === '錬鉄'));      // 初めての訪問では錬鉄から
+    apply(FACTORY[i], 'f:' + i, 0);
   }
 })();

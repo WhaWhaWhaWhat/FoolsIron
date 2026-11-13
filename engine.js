@@ -641,7 +641,7 @@ class Arp {
         }
         v.ph[j] = p;
       }
-      const nrm = 0.3 / Math.sqrt(sumsq || 1);
+      const nrm = 0.12 / Math.sqrt(sumsq || 1);
       const gl = panL(v.pan), gr = panR(v.pan), de = (e1 - e0) / n;
       let e = e0;
       for (let k = 0; k < n; k++) {
@@ -672,7 +672,7 @@ class Arp {
         amps.push(a); incs.push(fa / SR, fb / SR);
         sumsq += a * a;
       }
-      const nrm = 0.42 / Math.sqrt(sumsq || 1);
+      const nrm = 0.17 / Math.sqrt(sumsq || 1);
       const sp = P.arpPan * 0.5;
       for (let j = 0; j < AK; j++) {
         const a1 = amps[j] * nrm * this.gOn;
@@ -1157,7 +1157,7 @@ class Flute {
         i = p | 0; j = i + 1 >= FBN ? 0 : i + 1;
         blast = bore[i] + (bore[j] - bore[i]) * (p - i);
         if (++bw >= FBN) bw = 0;
-        o += blast * 0.32 * wj;
+        o += blast * 0.13 * wj;
       }
       if (useR) {
         rd += drd;
@@ -1170,11 +1170,11 @@ class Flute {
         const i = p | 0, j = i + 1 >= FRN ? 0 : i + 1;
         rlast = rb[i] + (rb[j] - rb[i]) * (p - i);
         if (++rw >= FRN) rw = 0;
-        o += rlast * 0.45 * (1 - wj);
+        o += rlast * 0.18 * (1 - wj);
       }
       const t2 = c * nx - sn * ny + nz * gn * a + 1e-20;
       ny = sn * nx + c * ny; nx = t2;
-      o += ny * 0.45;
+      o += ny * 0.18;
       l1 += (o - l1) * kfar; l2 += (l1 - l2) * kfar; o = l2;
       tL[k] += o * gl; tR[k] += o * gr; excT[k] += o * gE * 0.5;
     }
@@ -1247,7 +1247,7 @@ class Bell {
         } else add(fq, amp, t60);
       }
     }
-    const nrm = 0.3 * vel / Math.sqrt(sumsq || 1);
+    const nrm = 0.6 * vel / Math.sqrt(sumsq || 1);
     for (let i = 0; i < n; i++) v.xr[i] *= nrm;
     v.n = n; v.on = n > 0; v.e = 1;
     v.att = 0; v.attLen = Math.round((0.0005 + (1 - hard) * 0.008) * SR);       // 撞木が触れている時間
@@ -1463,7 +1463,7 @@ class FoolsIron extends AudioWorkletProcessor {
     this.phD = new Phaser(0); this.phN = new Phaser(0.37);
     this.bq = [0, 0, 0, 0, 0, 0, 0, 0];     // 主低域通過の状態 (x1,x2,y1,y2)×2
     this.dc = [0, 0, 0, 0];
-    this.sw = 1;
+    this.sw = 1; this.tg = 1;
     this.mt = null;          // 開発用の計器。各部の音量を個別に測る（tools/render.mjs が使う）
     this.seed(1);
     this.port.onmessage = e => this.onMsg(e.data);
@@ -1654,9 +1654,10 @@ class FoolsIron extends AudioWorkletProcessor {
     const bq = this.bq, dc = this.dc, mhp = this.mhp;
     const kh = 1 - Math.exp(-2 * Math.PI * 20 * Math.pow(90, dub.hp) / SR);
     const sw1 = P.width * 2, dsw = (sw1 - this.sw) / n;
-    let sw = this.sw;
+    const tg1 = Math.pow(10, P.trim / 20), dtg = (tg1 - this.tg) / n;      // トリム：プリセットごとの出口の音量
+    let sw = this.sw, tg = this.tg;
     for (let k = 0; k < n; k++) {
-      sw += dsw;
+      sw += dsw; tg += dtg;
       const mid = (dL[k] + dR[k]) * 0.5, side = (dL[k] - dR[k]) * 0.5 * sw;
       for (let ch = 0; ch < 2; ch++) {
         const o = ch * 4;
@@ -1667,13 +1668,13 @@ class FoolsIron extends AudioWorkletProcessor {
         bq[o + 1] = bq[o]; bq[o] = x; bq[o + 3] = bq[o + 2]; bq[o + 2] = y;
         const d = y - dc[ch * 2] + 0.9975 * dc[ch * 2 + 1];
         dc[ch * 2] = y; dc[ch * 2 + 1] = d;
-        y = d * 0.75;
+        y = d * 0.75 * tg;
         const ay = y < 0 ? -y : y;
         if (ay > 0.6) { const u = Math.tanh((ay - 0.6) / 0.38) * 0.38 + 0.6; y = y < 0 ? -u : u; }
         if (ch) oR[k] = y; else oL[k] = y;
       }
     }
-    this.sw = sw1;
+    this.sw = sw1; this.tg = tg1;
     return true;
   }
 }
